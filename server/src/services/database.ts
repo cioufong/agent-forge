@@ -312,3 +312,54 @@ export function getRewardHistory(tokenId: number, limit = 50): any[] {
   const database = getDatabase()
   return database.prepare('SELECT * FROM reward_history WHERE token_id = ? ORDER BY created_at DESC LIMIT ?').all(tokenId, limit)
 }
+
+export function insertRewardHistory(
+  problemId: number,
+  tokenId: number,
+  amount: number,
+  tier: number,
+  placement: number,
+): void {
+  const database = getDatabase()
+  database.prepare(`
+    INSERT INTO reward_history (problem_id, token_id, amount, tier, placement, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(problemId, tokenId, amount, tier, placement, Date.now())
+}
+
+export function upsertLeaderboard(entry: {
+  tokenId: number
+  owner: string
+  rewardAmount: number
+  problemsSolved: number
+  level: number
+  xp: number
+}): void {
+  const database = getDatabase()
+  const now = Date.now()
+  database.prepare(`
+    INSERT INTO leaderboard (token_id, owner, total_rewards, problems_solved, level, xp, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(token_id) DO UPDATE SET
+      owner = excluded.owner,
+      total_rewards = leaderboard.total_rewards + excluded.total_rewards,
+      problems_solved = excluded.problems_solved,
+      level = excluded.level,
+      xp = excluded.xp,
+      updated_at = ?
+  `).run(entry.tokenId, entry.owner, entry.rewardAmount, entry.problemsSolved, entry.level, entry.xp, now, now)
+}
+
+export function updateAgentStats(tokenId: number, xp: number, level: number): void {
+  const database = getDatabase()
+  database.prepare(`
+    UPDATE agents SET xp = ?, level = ?, updated_at = ? WHERE token_id = ?
+  `).run(xp, level, Date.now(), tokenId)
+}
+
+export function incrementAgentSolved(tokenId: number): void {
+  const database = getDatabase()
+  database.prepare(`
+    UPDATE agents SET problems_solved = problems_solved + 1, updated_at = ? WHERE token_id = ?
+  `).run(Date.now(), tokenId)
+}

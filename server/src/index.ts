@@ -75,12 +75,15 @@ app.get('/api/agents/:tokenId', async (req, res) => {
 })
 
 // Current problem (with phase deadlines)
+// Optional ?tokenId=N for future per-NFA question variants (Phase 2)
 app.get('/api/problems/current', (_req, res) => {
   const problem = getCurrentProblem()
   if (!problem) {
     res.status(404).json({ error: 'No active problem' })
     return
   }
+
+  const tokenId = _req.query.tokenId ? parseInt(_req.query.tokenId as string, 10) : undefined
 
   // Determine current phase based on time
   const now = Math.floor(Date.now() / 1000)
@@ -98,6 +101,7 @@ app.get('/api/problems/current', (_req, res) => {
     else if (submitDeadline && now > submitDeadline) phase = 'reveal'
   }
 
+  // MVP: same question for everyone. Phase 2 will use tokenId for per-NFA variants
   res.json({
     id: problem.id,
     questionText: problem.questionText,
@@ -105,6 +109,7 @@ app.get('/api/problems/current', (_req, res) => {
     difficulty: problem.difficulty,
     questionHash: problem.questionHash,
     phase,
+    tokenId: tokenId ?? null,
     submitDeadline: dbProblem?.submit_deadline || dbProblem?.deadline,
     revealDeadline: dbProblem?.reveal_deadline,
     verifyDeadline: dbProblem?.verify_deadline,

@@ -7,7 +7,7 @@
  */
 
 import { keccak256, toHex } from 'viem'
-import { resolveByOracleOnChain, distributeRewardsOnChain, isProblemResolvedOnChain, getWinnersOnChain } from './blockchain.js'
+import { resolveByOracleOnChain, distributeRewardsOnChain, isProblemResolvedOnChain, getWinnersOnChain, getAgentNFAData } from './blockchain.js'
 import { resolveProblem as resolveInDB } from './database.js'
 import type { Server as SocketServer } from 'socket.io'
 
@@ -62,10 +62,30 @@ export async function oracleResolve(problemId: number, io: SocketServer): Promis
     const winners = await getWinnersOnChain(BigInt(problemId))
     console.log(`[oracle] Problem #${problemId}: ${winners.length} winner(s)`)
 
-    // Distribute rewards (MVP: all Bronze tier)
+    // Group winners by tier based on NFA level
     if (winners.length > 0) {
-      await distributeRewardsOnChain(BigInt(problemId), 0, winners)
-      console.log(`[oracle] Rewards distributed for problem #${problemId}`)
+      const tierGroups: Map<number, bigint[]> = new Map()
+
+      for (const tokenId of winners) {
+        let tier = 0 // default Bronze
+        try {
+          const agentData = await getAgentNFAData(tokenId)
+          tier = Number(agentData.tier)
+        } catch { /* fallback to Bronze */ }
+
+        if (!tierGroups.has(tier)) tierGroups.set(tier, [])
+        tierGroups.get(tier)!.push(tokenId)
+      }
+
+      // Distribute rewards per tier
+      for (const [tier, tierWinners] of tierGroups) {
+        try {
+          await distributeRewardsOnChain(BigInt(problemId), tier, tierWinners)
+          console.log(`[oracle] Tier ${tier} rewards distributed for ${tierWinners.length} winner(s)`)
+        } catch (err: any) {
+          console.warn(`[oracle] Tier ${tier} distribution failed: ${err.message}`)
+        }
+      }
     }
 
     // Broadcast results

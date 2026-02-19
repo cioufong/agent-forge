@@ -3,7 +3,7 @@
  * viem client + contract interaction for 4-phase problem lifecycle
  */
 
-import { createPublicClient, createWalletClient, http, type PublicClient, type WalletClient, type Address, type Chain } from 'viem'
+import { createPublicClient, createWalletClient, http, type PublicClient, type WalletClient, type Address, type Chain, type Account } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { bscTestnet, bsc } from 'viem/chains'
 import * as fs from 'fs'
@@ -46,6 +46,7 @@ export interface ContractAddresses {
 
 let publicClient: PublicClient
 let walletClient: WalletClient
+let oracleAccount: Account
 let contracts: ContractAddresses
 let abis: Record<string, any[]> = {}
 
@@ -68,10 +69,10 @@ export function getWalletClient(): WalletClient {
 
     const chain = getChain()
     const rpcUrl = process.env.RPC_URL || chain.rpcUrls.default.http[0]
-    const account = privateKeyToAccount(oracleKey as `0x${string}`)
+    oracleAccount = privateKeyToAccount(oracleKey as `0x${string}`)
 
     walletClient = createWalletClient({
-      account,
+      account: oracleAccount,
       chain,
       transport: http(rpcUrl),
     })
@@ -112,13 +113,22 @@ export function getContracts(): ContractAddresses {
 export function getABI(name: string): any[] {
   if (abis[name]) return abis[name]
 
-  try {
-    const abiPath = path.resolve(__dirname, `../contracts/${name}.json`)
-    if (fs.existsSync(abiPath)) {
-      abis[name] = JSON.parse(fs.readFileSync(abiPath, 'utf-8'))
-      return abis[name]
-    }
-  } catch { /* ignore */ }
+  // Try Hardhat artifacts: artifacts/contracts/{Name}.sol/{Name}.json
+  const ARTIFACTS_DIR = process.env.ARTIFACTS_DIR || path.resolve(__dirname, '../../../contracts/artifacts')
+  const artifactPaths = [
+    path.join(ARTIFACTS_DIR, `contracts/${name}.sol/${name}.json`),
+    path.resolve(__dirname, `../contracts/${name}.json`),
+  ]
+
+  for (const abiPath of artifactPaths) {
+    try {
+      if (fs.existsSync(abiPath)) {
+        const data = JSON.parse(fs.readFileSync(abiPath, 'utf-8'))
+        abis[name] = data.abi || data
+        return abis[name]
+      }
+    } catch { /* try next */ }
+  }
 
   throw new Error(`ABI not found for ${name}`)
 }
@@ -203,6 +213,8 @@ export async function postProblemOnChain(questionHash: `0x${string}`) {
     abi,
     functionName: 'postProblem',
     args: [questionHash],
+    chain: getChain(),
+    account: oracleAccount,
   })
 
   const client = getPublicClient()
@@ -222,6 +234,8 @@ export async function resolveByOracleOnChain(
     abi,
     functionName: 'resolveByOracle',
     args: [problemId, correctAnswerHash],
+    chain: getChain(),
+    account: oracleAccount,
   })
 
   const client = getPublicClient()
@@ -242,6 +256,8 @@ export async function distributeRewardsOnChain(
     abi,
     functionName: 'distributeRewards',
     args: [problemId, tier, winnerTokenIds],
+    chain: getChain(),
+    account: oracleAccount,
   })
 
   const client = getPublicClient()
