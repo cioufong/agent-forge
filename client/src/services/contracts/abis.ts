@@ -8,6 +8,13 @@ export const AFG_TOKEN_ABI = [
   { type: 'function', name: 'currentRewardPerRound', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
   { type: 'function', name: 'approve', inputs: [{ name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }], outputs: [{ type: 'bool' }], stateMutability: 'nonpayable' },
   { type: 'function', name: 'transfer', inputs: [{ name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }], outputs: [{ type: 'bool' }], stateMutability: 'nonpayable' },
+  // Admin
+  { type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' },
+  { type: 'function', name: 'paused', inputs: [], outputs: [{ type: 'bool' }], stateMutability: 'view' },
+  { type: 'function', name: 'pause', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'unpause', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'dexTaxBps', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'setDexTaxBps', inputs: [{ name: '_bps', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
 ] as const
 
 export const AGENT_NFA_ABI = [
@@ -41,14 +48,16 @@ export const AGENT_NFA_ABI = [
     { name: 'specialization', type: 'uint8', indexed: false },
     { name: 'talentRarity', type: 'uint8', indexed: false },
   ]},
+  // Admin
+  { type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' },
+  { type: 'function', name: 'paused', inputs: [], outputs: [{ type: 'bool' }], stateMutability: 'view' },
+  { type: 'function', name: 'pause', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'unpause', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'setMintPrice', inputs: [{ name: '_price', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'withdraw', inputs: [], outputs: [], stateMutability: 'nonpayable' },
 ] as const
 
 export const PROBLEM_MANAGER_ABI = [
-  { type: 'function', name: 'submitAnswer', inputs: [
-    { name: 'problemId', type: 'uint256' },
-    { name: 'tokenId', type: 'uint256' },
-    { name: 'answerHash', type: 'bytes32' },
-  ], outputs: [], stateMutability: 'nonpayable' },
   { type: 'function', name: 'problemCount', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
   { type: 'function', name: 'getProblem', inputs: [{ name: 'problemId', type: 'uint256' }], outputs: [{ type: 'tuple', components: [
     { name: 'questionHash', type: 'bytes32' },
@@ -57,16 +66,13 @@ export const PROBLEM_MANAGER_ABI = [
     { name: 'resolved', type: 'bool' },
     { name: 'correctAnswerHash', type: 'bytes32' },
   ]}], stateMutability: 'view' },
+  { type: 'function', name: 'getPhase', inputs: [{ name: 'problemId', type: 'uint256' }], outputs: [{ type: 'uint8' }], stateMutability: 'view' },
   { type: 'function', name: 'isActive', inputs: [{ name: 'problemId', type: 'uint256' }], outputs: [{ type: 'bool' }], stateMutability: 'view' },
-  { type: 'function', name: 'hasSubmitted', inputs: [
-    { name: 'problemId', type: 'uint256' },
-    { name: 'tokenId', type: 'uint256' },
-  ], outputs: [{ type: 'bool' }], stateMutability: 'view' },
-  { type: 'event', name: 'AnswerSubmitted', inputs: [
-    { name: 'problemId', type: 'uint256', indexed: true },
-    { name: 'tokenId', type: 'uint256', indexed: true },
-    { name: 'answerHash', type: 'bytes32', indexed: false },
-  ]},
+  // Admin
+  { type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' },
+  { type: 'function', name: 'paused', inputs: [], outputs: [{ type: 'bool' }], stateMutability: 'view' },
+  { type: 'function', name: 'pause', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'unpause', inputs: [], outputs: [], stateMutability: 'nonpayable' },
 ] as const
 
 export const REWARD_DISTRIBUTOR_ABI = [
@@ -77,4 +83,11 @@ export const REWARD_DISTRIBUTOR_ABI = [
     { name: 'account', type: 'address', indexed: true },
     { name: 'amount', type: 'uint256', indexed: false },
   ]},
+  // Admin
+  { type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' },
+  { type: 'function', name: 'paused', inputs: [], outputs: [{ type: 'bool' }], stateMutability: 'view' },
+  { type: 'function', name: 'pause', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'unpause', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'devWallet', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' },
+  { type: 'function', name: 'setDevWallet', inputs: [{ name: '_wallet', type: 'address' }], outputs: [], stateMutability: 'nonpayable' },
 ] as const

@@ -5,8 +5,27 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'dashboard',
+      name: 'home',
       component: () => import('@/views/DashboardPage.vue'),
+    },
+    {
+      path: '/whitepaper',
+      name: 'whitepaper',
+      component: () => import('@/views/WhitepaperPage.vue'),
+    },
+    {
+      path: '/activity',
+      name: 'activity',
+      component: () => import('@/views/ProblemPage.vue'),
+    },
+    {
+      path: '/problem',
+      redirect: '/activity',
+    },
+    {
+      path: '/leaderboard',
+      name: 'leaderboard',
+      component: () => import('@/views/LeaderboardPage.vue'),
     },
     {
       path: '/mint',
@@ -19,14 +38,14 @@ const router = createRouter({
       component: () => import('@/views/AgentProfilePage.vue'),
     },
     {
-      path: '/leaderboard',
-      name: 'leaderboard',
-      component: () => import('@/views/LeaderboardPage.vue'),
-    },
-    {
       path: '/rewards',
       name: 'rewards',
       component: () => import('@/views/RewardsPage.vue'),
+    },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/views/AdminPage.vue'),
     },
   ],
 })

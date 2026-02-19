@@ -1,45 +1,52 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { useWeb3 } from '@/composables/useWeb3'
+import { useI18n } from 'vue-i18n'
 import { useAFGToken } from '@/composables/useAFGToken'
-import { useProblem } from '@/composables/useProblem'
+import { useProblem, type Phase } from '@/composables/useProblem'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { useAgentNFA } from '@/composables/useAgentNFA'
+import { useWeb3 } from '@/composables/useWeb3'
+import { AGENT_NFA_ABI } from '@/services/contracts/abis'
+import { getContractAddress } from '@/config/contracts'
+import { useContractStatus } from '@/composables/useContractStatus'
 
-const { isConnected, account } = useWeb3()
-const { totalSupply, totalMined, rewardPerRound, fetchTokenInfo } = useAFGToken()
+const { t } = useI18n()
+
+const { totalSupply: afgSupply, totalMined, rewardPerRound, fetchTokenInfo } = useAFGToken()
 const { currentProblem, fetchCurrentProblem } = useProblem()
 const { on, off } = useWebSocket()
-const { getAgentsByOwner } = useAgentNFA()
+const { getPublicClient } = useWeb3()
 
-const myAgents = ref<number[]>([])
+const { problemManagerPaused } = useContractStatus()
+const totalAgents = ref('0')
+
+function formatNumber(val: string): string {
+  const n = Math.floor(Number(val))
+  return n.toLocaleString()
+}
 const countdown = ref(0)
 let countdownInterval: ReturnType<typeof setInterval> | null = null
 
-const recentResults = ref<Array<{ problemId: number; winnerTokenIds: number[]; correctCount: number }>>([])
+const phase = computed<Phase>(() => currentProblem.value?.phase || 'submit')
 
-function onNewProblem(data: any) {
-  fetchCurrentProblem()
-  if (data.deadline) {
-    startCountdown(data.deadline)
+const phaseLabel = computed(() => {
+  const labels: Record<string, string> = {
+    submit: t('common.phase.submit'),
+    reveal: t('common.phase.reveal'),
+    verify: t('common.phase.verify'),
+    resolving: t('common.phase.resolving'),
+    resolved: t('common.phase.resolved'),
   }
-}
+  return labels[phase.value] || ''
+})
 
-function onProblemResolved(data: any) {
-  recentResults.value.unshift(data)
-  if (recentResults.value.length > 10) recentResults.value.pop()
-}
-
-function startCountdown(deadline: number) {
-  if (countdownInterval) clearInterval(countdownInterval)
-  countdownInterval = setInterval(() => {
-    const remaining = deadline - Math.floor(Date.now() / 1000)
-    countdown.value = Math.max(0, remaining)
-    if (remaining <= 0 && countdownInterval) {
-      clearInterval(countdownInterval)
-    }
-  }, 1000)
-}
+const currentDeadline = computed(() => {
+  const p = currentProblem.value
+  if (!p) return 0
+  if (phase.value === 'submit') return p.submitDeadline || 0
+  if (phase.value === 'reveal') return p.revealDeadline || 0
+  if (phase.value === 'verify') return p.verifyDeadline || 0
+  return 0
+})
 
 const countdownFormatted = computed(() => {
   const m = Math.floor(countdown.value / 60)
@@ -47,101 +54,225 @@ const countdownFormatted = computed(() => {
   return `${m}:${s.toString().padStart(2, '0')}`
 })
 
+function startCountdown() {
+  if (countdownInterval) clearInterval(countdownInterval)
+  countdownInterval = setInterval(() => {
+    const dl = currentDeadline.value
+    countdown.value = dl > 0 ? Math.max(0, dl - Math.floor(Date.now() / 1000)) : 0
+  }, 1000)
+}
+
+function onNewProblem() { fetchCurrentProblem(); startCountdown() }
+function onPhaseChange() { fetchCurrentProblem() }
+
+async function fetchAgentCount() {
+  try {
+    const client = getPublicClient()
+    const address = getContractAddress('AgentNFA')
+    const supply = await client.readContract({
+      address, abi: AGENT_NFA_ABI, functionName: 'totalSupply',
+    }) as bigint
+    totalAgents.value = supply.toString()
+  } catch {}
+}
+
 onMounted(async () => {
   on('new-problem', onNewProblem)
-  on('problem-resolved', onProblemResolved)
-
-  try { await fetchTokenInfo() } catch {}
-  await fetchCurrentProblem()
-
-  if (isConnected.value && account.value) {
-    try { myAgents.value = await getAgentsByOwner(account.value) } catch {}
-  }
+  on('phase-change', onPhaseChange)
+  await Promise.all([
+    fetchTokenInfo().catch(() => {}),
+    fetchCurrentProblem(),
+    fetchAgentCount(),
+  ])
+  startCountdown()
 })
 
 onUnmounted(() => {
   off('new-problem', onNewProblem)
-  off('problem-resolved', onProblemResolved)
+  off('phase-change', onPhaseChange)
   if (countdownInterval) clearInterval(countdownInterval)
 })
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="text-2xl font-bold">Dashboard</h1>
+  <div class="space-y-10">
 
-    <!-- Token Stats -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div class="bg-[var(--color-surface)] rounded-lg p-4 border border-[var(--color-border)]">
-        <div class="text-sm text-[var(--color-text-secondary)]">Total Supply</div>
-        <div class="text-xl font-bold mt-1">{{ totalSupply }} AFG</div>
-      </div>
-      <div class="bg-[var(--color-surface)] rounded-lg p-4 border border-[var(--color-border)]">
-        <div class="text-sm text-[var(--color-text-secondary)]">Total Mined</div>
-        <div class="text-xl font-bold mt-1">{{ totalMined }} AFG</div>
-      </div>
-      <div class="bg-[var(--color-surface)] rounded-lg p-4 border border-[var(--color-border)]">
-        <div class="text-sm text-[var(--color-text-secondary)]">Reward/Round</div>
-        <div class="text-xl font-bold mt-1">{{ rewardPerRound }} AFG</div>
-      </div>
-    </div>
-
-    <!-- Current Problem -->
-    <div class="bg-[var(--color-surface)] rounded-lg p-6 border border-[var(--color-border)]">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold">Current Problem</h2>
-        <div v-if="countdown > 0" class="text-[var(--color-primary)] font-mono text-lg">
-          {{ countdownFormatted }}
-        </div>
-      </div>
-
-      <div v-if="currentProblem" class="space-y-3">
-        <div class="flex items-center gap-2">
-          <span class="text-xs px-2 py-1 rounded bg-[var(--color-primary)]/20 text-[var(--color-primary)]">
-            {{ currentProblem.category }}
-          </span>
-          <span class="text-xs px-2 py-1 rounded bg-[var(--color-border)] text-[var(--color-text-secondary)]">
-            {{ currentProblem.difficulty }}
-          </span>
-          <span class="text-xs text-[var(--color-text-secondary)]">#{{ currentProblem.id }}</span>
-        </div>
-        <p class="text-lg">{{ currentProblem.questionText }}</p>
-      </div>
-      <div v-else class="text-[var(--color-text-secondary)]">
-        Waiting for next problem...
-      </div>
-    </div>
-
-    <!-- My Agents -->
-    <div v-if="isConnected && myAgents.length > 0" class="bg-[var(--color-surface)] rounded-lg p-6 border border-[var(--color-border)]">
-      <h2 class="text-lg font-semibold mb-4">My Agents</h2>
-      <div class="flex flex-wrap gap-3">
-        <RouterLink
-          v-for="tokenId in myAgents"
-          :key="tokenId"
-          :to="`/agent/${tokenId}`"
-          class="px-4 py-2 bg-[var(--color-bg)] rounded-lg border border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors"
-        >
-          Agent #{{ tokenId }}
+    <!-- Title Screen -->
+    <section class="text-center py-12">
+      <div class="text-[var(--color-primary)] text-[8px] tracking-[6px] uppercase mb-4">{{ $t('home.pressStart') }}</div>
+      <h1 class="text-[32px] leading-tight">
+        <span class="text-[var(--color-primary)]">AGENT</span><span class="text-[var(--color-text)]">FORGE</span>
+      </h1>
+      <p class="mt-6 text-[var(--color-text-secondary)] max-w-xl mx-auto">
+        {{ $t('home.subtitle') }}
+      </p>
+      <div class="mt-8 flex items-center justify-center gap-4 flex-wrap">
+        <RouterLink to="/mint" class="rpg-btn no-underline hover:no-underline">
+          {{ $t('home.summonAgent') }}
+        </RouterLink>
+        <RouterLink to="/activity" class="rpg-btn-secondary no-underline hover:no-underline hover:!text-[var(--color-primary)]">
+          {{ $t('home.battleLog') }}
         </RouterLink>
       </div>
-    </div>
+    </section>
 
-    <!-- Recent Results -->
-    <div v-if="recentResults.length > 0" class="bg-[var(--color-surface)] rounded-lg p-6 border border-[var(--color-border)]">
-      <h2 class="text-lg font-semibold mb-4">Recent Results</h2>
-      <div class="space-y-2">
-        <div
-          v-for="result in recentResults"
-          :key="result.problemId"
-          class="flex items-center justify-between text-sm py-2 border-b border-[var(--color-border)] last:border-0"
-        >
-          <span>Problem #{{ result.problemId }}</span>
-          <span class="text-[var(--color-text-secondary)]">
-            {{ result.correctCount }} correct / {{ result.winnerTokenIds.length }} winners
-          </span>
+    <hr class="pixel-divider" />
+
+    <!-- Adventure Guide -->
+    <section>
+      <h2 class="text-center mb-8">{{ $t('home.adventureGuide') }}</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        <div class="rpg-box text-center">
+          <div class="text-[24px] mb-3 text-[var(--color-primary)]">I</div>
+          <h3 class="text-[var(--color-primary)] mb-3">{{ $t('home.step1Title') }}</h3>
+          <p class="text-[var(--color-text-secondary)] text-[9px]">
+            {{ $t('home.step1Desc') }}
+          </p>
+        </div>
+        <div class="rpg-box text-center">
+          <div class="text-[24px] mb-3 text-[var(--color-xp)]">II</div>
+          <h3 class="text-[var(--color-xp)] mb-3">{{ $t('home.step2Title') }}</h3>
+          <p class="text-[var(--color-text-secondary)] text-[9px]">
+            {{ $t('home.step2Desc') }}
+          </p>
+        </div>
+        <div class="rpg-box text-center">
+          <div class="text-[24px] mb-3 text-[var(--color-gold)]">III</div>
+          <h3 class="text-[var(--color-gold)] mb-3">{{ $t('home.step3Title') }}</h3>
+          <p class="text-[var(--color-text-secondary)] text-[9px]">
+            {{ $t('home.step3Desc') }}
+          </p>
         </div>
       </div>
-    </div>
+    </section>
+
+    <hr class="pixel-divider" />
+
+    <!-- Live Stats -->
+    <section>
+      <h2 class="text-center mb-8">{{ $t('home.status') }}</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
+        <div class="rpg-box text-center">
+          <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.supply') }}</div>
+          <div class="text-[14px] text-[var(--color-primary)] mt-2">{{ formatNumber(afgSupply) }}</div>
+          <div class="text-[8px] text-[var(--color-text-secondary)]">AFG</div>
+        </div>
+        <div class="rpg-box text-center">
+          <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.mined') }}</div>
+          <div class="text-[14px] text-[var(--color-xp)] mt-2">{{ formatNumber(totalMined) }}</div>
+          <div class="text-[8px] text-[var(--color-text-secondary)]">AFG</div>
+        </div>
+        <div class="rpg-box text-center">
+          <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.reward') }}</div>
+          <div class="text-[14px] text-[var(--color-gold)] mt-2">{{ formatNumber(rewardPerRound) }}</div>
+          <div class="text-[8px] text-[var(--color-text-secondary)]">{{ $t('home.perRound') }}</div>
+        </div>
+        <div class="rpg-box text-center">
+          <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.agents') }}</div>
+          <div class="text-[14px] text-[var(--color-mp)] mt-2">{{ totalAgents }}</div>
+          <div class="text-[8px] text-[var(--color-text-secondary)]">{{ $t('home.active') }}</div>
+        </div>
+      </div>
+    </section>
+
+    <hr class="pixel-divider" />
+
+    <!-- Current Quest -->
+    <section class="max-w-3xl mx-auto">
+      <h2 class="text-center mb-8">{{ $t('home.currentQuest') }}</h2>
+      <div class="rpg-box">
+        <div v-if="currentProblem" class="space-y-4">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <div class="flex items-center gap-3">
+              <span class="text-[8px] px-2 py-1 bg-[var(--color-bg)] border-2 border-[var(--color-primary)] text-[var(--color-primary)]">
+                {{ currentProblem.category }}
+              </span>
+              <span class="text-[8px] px-2 py-1 bg-[var(--color-bg)] border-2 border-[var(--color-border)]">
+                {{ currentProblem.difficulty }}
+              </span>
+              <span class="text-[8px] text-[var(--color-text-secondary)]">{{ $t('home.quest') }} #{{ currentProblem.id }}</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-[9px] text-[var(--color-xp)]">{{ phaseLabel }}</span>
+              <span v-if="countdown > 0" class="text-[var(--color-primary)] text-[14px]">
+                {{ countdownFormatted }}
+              </span>
+            </div>
+          </div>
+          <p class="text-[12px]">{{ currentProblem.questionText }}</p>
+          <RouterLink to="/activity" class="text-[9px] text-[var(--color-primary)]">
+            &triangleright; {{ $t('home.watchBattle') }} &rarr;
+          </RouterLink>
+        </div>
+        <div v-else-if="problemManagerPaused" class="text-center py-4">
+          <span class="text-[var(--color-gold)]">&#9888;</span>
+          <span class="text-[var(--color-text-secondary)] text-[9px] ml-2">{{ $t('common.contractPaused') }}</span>
+        </div>
+        <div v-else class="text-center text-[var(--color-text-secondary)] py-4">
+          {{ $t('common.waitingForQuest') }}<span class="blink">_</span>
+        </div>
+      </div>
+    </section>
+
+    <hr class="pixel-divider" />
+
+    <!-- Agent Skills Download -->
+    <section class="max-w-3xl mx-auto">
+      <h2 class="text-center mb-4">{{ $t('home.agentSkills') }}</h2>
+      <p class="text-center text-[var(--color-text-secondary)] text-[9px] mb-6">{{ $t('home.skillsDesc') }}</p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="rpg-box flex items-center justify-between gap-4">
+          <div>
+            <h3 class="text-[var(--color-xp)] mb-1">&triangleright; {{ $t('home.solverSkill') }}</h3>
+            <p class="text-[var(--color-text-secondary)] text-[9px]">{{ $t('home.solverSkillDesc') }}</p>
+          </div>
+          <a href="/skills/solver.skill.md" download class="rpg-btn !text-[8px] !px-3 !py-2 no-underline hover:no-underline shrink-0">
+            {{ $t('home.download') }}
+          </a>
+        </div>
+        <div class="rpg-box flex items-center justify-between gap-4">
+          <div>
+            <h3 class="text-[var(--color-mp)] mb-1">&triangleright; {{ $t('home.verifierSkill') }}</h3>
+            <p class="text-[var(--color-text-secondary)] text-[9px]">{{ $t('home.verifierSkillDesc') }}</p>
+          </div>
+          <a href="/skills/verifier.skill.md" download class="rpg-btn !text-[8px] !px-3 !py-2 no-underline hover:no-underline shrink-0">
+            {{ $t('home.download') }}
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <hr class="pixel-divider" />
+
+    <!-- Features -->
+    <section>
+      <h2 class="text-center mb-8">{{ $t('home.keyFeatures') }}</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
+        <div class="rpg-box">
+          <h3 class="text-[var(--color-primary)] mb-2">&triangleright; {{ $t('home.feature1Title') }}</h3>
+          <p class="text-[var(--color-text-secondary)] text-[9px]">
+            {{ $t('home.feature1Desc') }}
+          </p>
+        </div>
+        <div class="rpg-box">
+          <h3 class="text-[var(--color-mp)] mb-2">&triangleright; {{ $t('home.feature2Title') }}</h3>
+          <p class="text-[var(--color-text-secondary)] text-[9px]">
+            {{ $t('home.feature2Desc') }}
+          </p>
+        </div>
+        <div class="rpg-box">
+          <h3 class="text-[var(--color-gold)] mb-2">&triangleright; {{ $t('home.feature3Title') }}</h3>
+          <p class="text-[var(--color-text-secondary)] text-[9px]">
+            {{ $t('home.feature3Desc') }}
+          </p>
+        </div>
+        <div class="rpg-box">
+          <h3 class="text-[var(--color-xp)] mb-2">&triangleright; {{ $t('home.feature4Title') }}</h3>
+          <p class="text-[var(--color-text-secondary)] text-[9px]">
+            {{ $t('home.feature4Desc') }}
+          </p>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
