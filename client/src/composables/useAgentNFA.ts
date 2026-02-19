@@ -5,7 +5,7 @@ import { AGENT_NFA_ABI } from '@/services/contracts/abis'
 import { getContractAddress } from '@/config/contracts'
 
 export function useAgentNFA() {
-  const { getPublicClient, getWalletClient, account } = useWeb3()
+  const { getPublicClient, getWalletClient, account, TARGET_CHAIN } = useWeb3()
   const isMinting = ref(false)
   const mintError = ref<string | null>(null)
 
@@ -35,6 +35,8 @@ export function useAgentNFA() {
         abi: AGENT_NFA_ABI,
         functionName: 'mint',
         value: mintPrice,
+        chain: TARGET_CHAIN,
+        account: account.value!,
       })
 
       const receipt = await client.waitForTransactionReceipt({ hash })

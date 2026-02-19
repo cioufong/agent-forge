@@ -190,9 +190,9 @@ describe('AFGToken', () => {
       );
     });
 
-    it('should apply 2% tax when transferring TO a dex pair', async () => {
+    it('should apply 3% tax when transferring TO a dex pair', async () => {
       const transferAmount = parseEther('1000');
-      const expectedTax = (transferAmount * 200n) / 10000n; // 2%
+      const expectedTax = (transferAmount * 300n) / 10000n; // 3%
       const expectedNet = transferAmount - expectedTax;
 
       const treasuryBefore = await taxToken.read.balanceOf([
@@ -215,13 +215,13 @@ describe('AFGToken', () => {
       assert.equal(treasuryAfter - treasuryBefore, expectedTax);
     });
 
-    it('should apply 2% tax when transferring FROM a dex pair', async () => {
+    it('should apply 3% tax when transferring FROM a dex pair', async () => {
       // dexPair sends tokens to user2
       const dexBalance = await taxToken.read.balanceOf([
         dexPair.account.address,
       ]);
       const transferAmount = dexBalance; // send everything the pair has
-      const expectedTax = (transferAmount * 200n) / 10000n;
+      const expectedTax = (transferAmount * 300n) / 10000n;
       const expectedNet = transferAmount - expectedTax;
 
       const treasuryBefore = await taxToken.read.balanceOf([
@@ -289,6 +289,99 @@ describe('AFGToken', () => {
           return true;
         },
       );
+    });
+
+    it('should allow owner to change dex tax rate', async () => {
+      // Change to 5% (500 BPS)
+      await taxToken.write.setDexTaxBps([500n], {
+        account: deployer.account,
+      });
+
+      const transferAmount = parseEther('1000');
+      const expectedTax = (transferAmount * 500n) / 10000n; // 5%
+      const expectedNet = transferAmount - expectedTax;
+
+      // Mint fresh tokens for test
+      await taxToken.write.mint(
+        [user1.account.address, transferAmount],
+        { account: minter.account },
+      );
+
+      const dexBefore = await taxToken.read.balanceOf([dexPair.account.address]);
+      const treasuryBefore = await taxToken.read.balanceOf([treasury.account.address]);
+
+      await taxToken.write.transfer(
+        [dexPair.account.address, transferAmount],
+        { account: user1.account },
+      );
+
+      const dexAfter = await taxToken.read.balanceOf([dexPair.account.address]);
+      const treasuryAfter = await taxToken.read.balanceOf([treasury.account.address]);
+
+      assert.equal(dexAfter - dexBefore, expectedNet);
+      assert.equal(treasuryAfter - treasuryBefore, expectedTax);
+
+      // Reset to 3%
+      await taxToken.write.setDexTaxBps([300n], {
+        account: deployer.account,
+      });
+    });
+
+    it('should revert when setting tax above MAX_DEX_TAX_BPS (10%)', async () => {
+      await assert.rejects(
+        taxToken.write.setDexTaxBps([1001n], {
+          account: deployer.account,
+        }),
+        (err: any) => {
+          assert.ok(
+            err.message.includes('TaxTooHigh'),
+            `Expected TaxTooHigh error, got: ${err.message}`,
+          );
+          return true;
+        },
+      );
+    });
+
+    it('should revert when non-owner tries to set tax rate', async () => {
+      await assert.rejects(
+        taxToken.write.setDexTaxBps([500n], {
+          account: user1.account,
+        }),
+        (err: any) => {
+          assert.ok(
+            err.message.includes('OwnableUnauthorizedAccount'),
+            `Expected OwnableUnauthorizedAccount error, got: ${err.message}`,
+          );
+          return true;
+        },
+      );
+    });
+
+    it('should allow setting tax to zero', async () => {
+      await taxToken.write.setDexTaxBps([0n], {
+        account: deployer.account,
+      });
+
+      const transferAmount = parseEther('100');
+      await taxToken.write.mint(
+        [user1.account.address, transferAmount],
+        { account: minter.account },
+      );
+
+      const treasuryBefore = await taxToken.read.balanceOf([treasury.account.address]);
+
+      await taxToken.write.transfer(
+        [dexPair.account.address, transferAmount],
+        { account: user1.account },
+      );
+
+      const treasuryAfter = await taxToken.read.balanceOf([treasury.account.address]);
+      assert.equal(treasuryAfter, treasuryBefore); // no tax
+
+      // Reset to 3%
+      await taxToken.write.setDexTaxBps([300n], {
+        account: deployer.account,
+      });
     });
   });
 

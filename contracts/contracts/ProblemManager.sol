@@ -283,11 +283,45 @@ contract ProblemManager is Ownable, Pausable {
 
         // Determine winners: all tokenIds that revealed this answer
         uint256[] storage tokenIds = _answerTokenIds[problemId][correctAnswerHash];
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            winners[problemId].push(tokenIds[i]);
+        uint256 len = tokenIds.length;
+
+        // Copy to memory for sorting
+        uint256[] memory sorted = new uint256[](len);
+        for (uint256 i = 0; i < len; i++) {
+            sorted[i] = tokenIds[i];
+        }
+
+        // Sort by speed (descending), then by submittedAt (ascending) as tiebreaker
+        _sortBySpeed(sorted, problemId);
+
+        for (uint256 i = 0; i < len; i++) {
+            winners[problemId].push(sorted[i]);
         }
 
         emit ProblemResolved(problemId, correctAnswerHash, winners[problemId], isFallback);
+    }
+
+    /// @notice Insertion sort winners by speed priority (descending speed, ascending submittedAt)
+    function _sortBySpeed(uint256[] memory tokenIds, uint256 problemId) internal view {
+        uint256 n = tokenIds.length;
+        for (uint256 i = 1; i < n; i++) {
+            uint256 key = tokenIds[i];
+            uint256 keyScore = _speedScore(key, problemId);
+            uint256 j = i;
+            while (j > 0 && _speedScore(tokenIds[j - 1], problemId) < keyScore) {
+                tokenIds[j] = tokenIds[j - 1];
+                j--;
+            }
+            tokenIds[j] = key;
+        }
+    }
+
+    /// @notice Higher speed = higher score. Same speed: earlier submission = higher score.
+    function _speedScore(uint256 tokenId, uint256 problemId) internal view returns (uint256) {
+        AgentNFA.AgentTraits memory t = agentNFA.getTraits(tokenId);
+        uint256 idx = submissionIndex[problemId][tokenId];
+        Submission storage sub = _submissions[problemId][idx - 1];
+        return uint256(t.speed) * 1e18 + (type(uint64).max - sub.submittedAt);
     }
 
     // ============ Resolver (VerifierElection) ============

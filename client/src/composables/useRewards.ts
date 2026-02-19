@@ -5,7 +5,7 @@ import { REWARD_DISTRIBUTOR_ABI } from '@/services/contracts/abis'
 import { getContractAddress } from '@/config/contracts'
 
 export function useRewards() {
-  const { getPublicClient, getWalletClient, account } = useWeb3()
+  const { getPublicClient, getWalletClient, account, TARGET_CHAIN } = useWeb3()
   const pendingRewards = ref<string>('0')
   const isClaiming = ref(false)
   const claimError = ref<string | null>(null)
@@ -43,6 +43,8 @@ export function useRewards() {
         address,
         abi: REWARD_DISTRIBUTOR_ABI,
         functionName: 'claimRewards',
+        chain: TARGET_CHAIN,
+        account: account.value!,
       })
 
       await client.waitForTransactionReceipt({ hash })

@@ -1,17 +1,208 @@
 @import "tailwindcss";
 
 :root {
-  --color-primary: #f59e0b;
-  --color-bg: #0f172a;
-  --color-surface: #1e293b;
-  --color-border: #334155;
-  --color-text: #f1f5f9;
-  --color-text-secondary: #94a3b8;
+  --color-bg: #0c0c1d;
+  --color-surface: #16213e;
+  --color-border: #3a4a6b;
+  --color-border-light: #7b8caa;
+  --color-primary: #ffd700;
+  --color-primary-dark: #b8960b;
+  --color-text: #e0dfd5;
+  --color-text-secondary: #7b8caa;
+  --color-hp: #e74c3c;
+  --color-mp: #3978a8;
+  --color-xp: #63c74d;
+  --color-gold: #ffd700;
+  --color-silver: #c0c0c0;
+  --color-bronze: #cd7f32;
+}
+
+*, *::before, *::after {
+  border-radius: 0 !important;
+  image-rendering: pixelated;
 }
 
 body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  line-height: 2;
+}
+
+h1 { font-size: 20px; line-height: 1.4; }
+h2 { font-size: 14px; line-height: 1.5; }
+h3 { font-size: 12px; line-height: 1.5; }
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+  text-decoration-style: wavy;
+}
+
+/* === RPG Dialog Box === */
+.rpg-box {
+  background: var(--color-surface);
+  border: 3px solid var(--color-border-light);
+  box-shadow:
+    0 0 0 3px var(--color-bg),
+    0 0 0 6px var(--color-border);
+  padding: 16px;
+  position: relative;
+}
+
+.rpg-box-title {
+  position: absolute;
+  top: -12px;
+  left: 16px;
+  background: var(--color-surface);
+  padding: 0 8px;
+  font-size: 8px;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+/* === RPG Buttons === */
+.rpg-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  padding: 12px 24px;
+  background: var(--color-primary);
+  color: #000;
+  border: none;
+  box-shadow:
+    inset -3px -3px 0 0 rgba(0,0,0,0.3),
+    inset 3px 3px 0 0 rgba(255,255,255,0.3),
+    0 4px 0 0 var(--color-primary-dark);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: relative;
+  top: 0;
+  transition: top 0.05s, box-shadow 0.05s;
+}
+.rpg-btn:hover {
+  filter: brightness(1.1);
+}
+.rpg-btn:active {
+  top: 4px;
+  box-shadow:
+    inset 3px 3px 0 0 rgba(0,0,0,0.3),
+    inset -3px -3px 0 0 rgba(255,255,255,0.3);
+}
+.rpg-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+
+.rpg-btn-secondary {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  padding: 12px 24px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 3px solid var(--color-border);
+  box-shadow:
+    inset -3px -3px 0 0 rgba(0,0,0,0.3),
+    inset 3px 3px 0 0 rgba(255,255,255,0.08),
+    0 4px 0 0 rgba(0,0,0,0.4);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: relative;
+  top: 0;
+  transition: top 0.05s, box-shadow 0.05s;
+}
+.rpg-btn-secondary:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.rpg-btn-secondary:active {
+  top: 4px;
+  box-shadow:
+    inset 3px 3px 0 0 rgba(0,0,0,0.3),
+    inset -3px -3px 0 0 rgba(255,255,255,0.08);
+}
+
+/* === Pixel Stat Bar === */
+.pixel-bar {
+  display: flex;
+  gap: 2px;
+  background: var(--color-bg);
+  border: 2px solid var(--color-border);
+  padding: 2px;
+}
+.pixel-bar-segment {
+  width: 6px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+/* === RPG Input === */
+.rpg-input {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 3px solid var(--color-border);
+  padding: 10px 12px;
+  line-height: 2;
+  width: 100%;
+  box-sizing: border-box;
+}
+.rpg-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* === Pixel Divider === */
+.pixel-divider {
+  border: none;
+  height: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-border) 0px,
+    var(--color-border) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
+
+/* === Blinking Cursor === */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* === Scrollbar === */
+::-webkit-scrollbar {
+  width: 12px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+  border-left: 3px solid var(--color-border);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border: 2px solid var(--color-bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-light);
+}
+
+/* === Table === */
+table {
+  font-size: 10px;
+}
+th, td {
+  text-align: left;
 }

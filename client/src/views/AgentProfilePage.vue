@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAgentNFA } from '@/composables/useAgentNFA'
 
+const { t } = useI18n()
 const route = useRoute()
 const { getTraits, getStats, getTier } = useAgentNFA()
 
@@ -15,21 +17,23 @@ const error = ref<string | null>(null)
 
 const specializations = ['Math', 'Code', 'Trivia']
 const rarities = ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic']
-const tiers = ['Bronze', 'Silver', 'Gold']
-const tierColors = ['text-amber-600', 'text-gray-300', 'text-yellow-400']
+const tiers = computed(() => [t('common.tier.bronze'), t('common.tier.silver'), t('common.tier.gold')])
+const tierColors = ['text-[var(--color-bronze)]', 'text-[var(--color-silver)]', 'text-[var(--color-gold)]']
 
-// Agent profile from server
 const agentProfile = ref<any>(null)
+
+function traitPercent(val: number): number {
+  return Math.round(((val - 8) / 10) * 100)
+}
+
+function traitSegments(val: number): number {
+  return Math.round(((val - 8) / 10) * 10)
+}
 
 onMounted(async () => {
   try {
-    // Try server API first
     const res = await fetch(`/api/agents/${tokenId.value}`)
-    if (res.ok) {
-      agentProfile.value = await res.json()
-    }
-
-    // Also try on-chain
+    if (res.ok) agentProfile.value = await res.json()
     traits.value = await getTraits(tokenId.value)
     stats.value = await getStats(tokenId.value)
     tier.value = await getTier(tokenId.value)
@@ -43,71 +47,95 @@ onMounted(async () => {
 
 <template>
   <div class="max-w-2xl mx-auto space-y-6">
-    <h1 class="text-2xl font-bold">Agent #{{ tokenId }}</h1>
+    <h1>{{ t('agent.title', { id: tokenId }) }}</h1>
 
-    <div v-if="loading" class="text-center text-[var(--color-text-secondary)] py-12">
-      Loading agent data...
+    <div v-if="loading" class="rpg-box text-center text-[var(--color-text-secondary)] py-12">
+      {{ t('common.loading') }}<span class="blink">_</span>
     </div>
 
-    <div v-else-if="error" class="text-center text-red-400 py-12">
+    <div v-else-if="error" class="rpg-box text-center text-[var(--color-hp)] py-12">
       {{ error }}
     </div>
 
     <template v-else>
       <!-- Tier & Level -->
-      <div class="bg-[var(--color-surface)] rounded-lg p-6 border border-[var(--color-border)]">
-        <div class="flex items-center justify-between">
+      <div class="rpg-box relative">
+        <span class="rpg-box-title">{{ t('agent.status') }}</span>
+        <div class="flex items-center justify-between mt-2">
           <div>
-            <span :class="tierColors[tier]" class="text-2xl font-bold">{{ tiers[tier] }}</span>
-            <span class="text-[var(--color-text-secondary)] ml-2">Tier</span>
+            <span :class="tierColors[tier]" class="text-[20px]">{{ tiers[tier] }}</span>
+            <span class="text-[8px] text-[var(--color-text-secondary)] ml-2 uppercase">{{ t('agent.tier') }}</span>
           </div>
           <div class="text-right">
-            <div class="text-3xl font-bold">Lv.{{ stats?.level || 1 }}</div>
-            <div class="text-sm text-[var(--color-text-secondary)]">{{ stats?.xp || 0 }} XP</div>
+            <div class="text-[24px] text-[var(--color-primary)]">LV.{{ stats?.level || 1 }}</div>
+            <div class="text-[8px] text-[var(--color-text-secondary)]">{{ stats?.xp || 0 }} EXP</div>
+          </div>
+        </div>
+
+        <!-- EXP Bar -->
+        <div class="mt-4">
+          <div class="text-[8px] text-[var(--color-text-secondary)] uppercase mb-1">{{ t('agent.exp') }}</div>
+          <div class="pixel-bar">
+            <div
+              v-for="i in 20" :key="i"
+              :class="['pixel-bar-segment flex-1', i <= Math.min(20, (stats?.xp || 0) % 20 || 20) ? 'bg-[var(--color-xp)]' : 'bg-[var(--color-border)]']"
+            />
           </div>
         </div>
       </div>
 
       <!-- Traits -->
-      <div class="bg-[var(--color-surface)] rounded-lg p-6 border border-[var(--color-border)]">
-        <h2 class="text-lg font-semibold mb-4">Traits</h2>
-        <div class="grid grid-cols-2 gap-4">
+      <div class="rpg-box relative">
+        <span class="rpg-box-title">{{ t('agent.traits') }}</span>
+        <div class="space-y-4 mt-2">
           <div>
-            <div class="text-sm text-[var(--color-text-secondary)]">Intelligence</div>
-            <div class="text-xl font-mono">{{ traits?.intelligence || 0 }}</div>
-            <div class="w-full bg-[var(--color-bg)] rounded-full h-2 mt-1">
-              <div class="bg-blue-500 h-2 rounded-full" :style="{ width: `${((traits?.intelligence || 8) - 8) * 10}%` }"></div>
+            <div class="flex justify-between text-[9px] mb-1">
+              <span class="text-[var(--color-mp)]">INT</span>
+              <span>{{ traits?.intelligence || 0 }}</span>
+            </div>
+            <div class="pixel-bar">
+              <div
+                v-for="i in 10" :key="i"
+                :class="['pixel-bar-segment flex-1', i <= traitSegments(traits?.intelligence || 8) ? 'bg-[var(--color-mp)]' : 'bg-[var(--color-border)]']"
+              />
             </div>
           </div>
           <div>
-            <div class="text-sm text-[var(--color-text-secondary)]">Speed</div>
-            <div class="text-xl font-mono">{{ traits?.speed || 0 }}</div>
-            <div class="w-full bg-[var(--color-bg)] rounded-full h-2 mt-1">
-              <div class="bg-green-500 h-2 rounded-full" :style="{ width: `${((traits?.speed || 8) - 8) * 10}%` }"></div>
+            <div class="flex justify-between text-[9px] mb-1">
+              <span class="text-[var(--color-xp)]">SPD</span>
+              <span>{{ traits?.speed || 0 }}</span>
+            </div>
+            <div class="pixel-bar">
+              <div
+                v-for="i in 10" :key="i"
+                :class="['pixel-bar-segment flex-1', i <= traitSegments(traits?.speed || 8) ? 'bg-[var(--color-xp)]' : 'bg-[var(--color-border)]']"
+              />
             </div>
           </div>
-          <div>
-            <div class="text-sm text-[var(--color-text-secondary)]">Specialization</div>
-            <div class="text-xl">{{ specializations[traits?.specialization || 0] }}</div>
-          </div>
-          <div>
-            <div class="text-sm text-[var(--color-text-secondary)]">Talent Rarity</div>
-            <div class="text-xl">{{ rarities[traits?.talentRarity || 0] }}</div>
+          <div class="grid grid-cols-2 gap-4 text-[9px]">
+            <div>
+              <span class="text-[var(--color-text-secondary)]">SPEC:</span>
+              <span class="text-[var(--color-primary)] ml-2">{{ specializations[traits?.specialization || 0] }}</span>
+            </div>
+            <div>
+              <span class="text-[var(--color-text-secondary)]">RARE:</span>
+              <span class="text-[var(--color-primary)] ml-2">{{ rarities[traits?.talentRarity || 0] }}</span>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Performance -->
-      <div class="bg-[var(--color-surface)] rounded-lg p-6 border border-[var(--color-border)]">
-        <h2 class="text-lg font-semibold mb-4">Performance</h2>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <div class="text-sm text-[var(--color-text-secondary)]">Problems Solved</div>
-            <div class="text-2xl font-bold">{{ stats?.problemsSolved || 0 }}</div>
+      <div class="rpg-box relative">
+        <span class="rpg-box-title">{{ t('agent.battleRecord') }}</span>
+        <div class="grid grid-cols-2 gap-4 mt-2">
+          <div class="text-center">
+            <div class="text-[8px] text-[var(--color-text-secondary)] uppercase">{{ t('agent.questsCleared') }}</div>
+            <div class="text-[20px] text-[var(--color-xp)] mt-2">{{ stats?.problemsSolved || 0 }}</div>
           </div>
-          <div>
-            <div class="text-sm text-[var(--color-text-secondary)]">Problems Attempted</div>
-            <div class="text-2xl font-bold">{{ stats?.problemsAttempted || 0 }}</div>
+          <div class="text-center">
+            <div class="text-[8px] text-[var(--color-text-secondary)] uppercase">{{ t('agent.questsAttempted') }}</div>
+            <div class="text-[20px] mt-2">{{ stats?.problemsAttempted || 0 }}</div>
           </div>
         </div>
       </div>

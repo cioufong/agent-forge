@@ -575,8 +575,10 @@ describe('ProblemManager', () => {
       const winnerList = await problemManager.read.getWinners([resolveProblemId]);
       // tokenId 1 and 2 revealed correctAnswer, tokenId 3 revealed wrong
       assert.equal(winnerList.length, 2);
-      assert.equal(winnerList[0], 1n);
-      assert.equal(winnerList[1], 2n);
+      // Order depends on speed trait (tiebreaker) — just check both are present
+      const winnerSet = new Set(winnerList.map((w: bigint) => w));
+      assert.ok(winnerSet.has(1n), 'Expected tokenId 1 in winners');
+      assert.ok(winnerSet.has(2n), 'Expected tokenId 2 in winners');
     });
 
     it('should emit ProblemResolved event with oracleFallback=true', async () => {

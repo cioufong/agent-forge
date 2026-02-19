@@ -68,23 +68,19 @@ describe('RewardDistributor', () => {
       devWallet.account.address,
     ]);
 
-    // Wire up permissions:
-    // - AFGToken: set RewardDistributor as minter, unpause
+    // Wire up permissions
     await afgToken.write.setMinter([rewardDistributor.address], {
       account: deployer.account,
     });
     await afgToken.write.unpause({ account: deployer.account });
 
-    // - AgentNFA: set RewardDistributor as game master, unpause
     await agentNFA.write.setGameMaster([rewardDistributor.address, true], {
       account: deployer.account,
     });
     await agentNFA.write.unpause({ account: deployer.account });
 
-    // - ProblemManager: unpause
     await problemManager.write.unpause({ account: deployer.account });
 
-    // - RewardDistributor: unpause
     await rewardDistributor.write.unpause({ account: deployer.account });
 
     // Mint NFAs for each user
@@ -97,18 +93,8 @@ describe('RewardDistributor', () => {
 
   /**
    * Helper: post a problem, go through the 4-phase lifecycle, and resolve.
-   *
-   * Phases:
-   *   1. Submit  - all submitters submit the same answer hash
-   *   2. Reveal  - advance past submit deadline, all submitters reveal plaintext
-   *   3. Verify  - (no action needed from test)
-   *   4. Resolve - advance past verify deadline, oracle resolves
-   *
-   * Winners are auto-determined from revealed answers matching the correct hash.
-   * All submitters submit the SAME correct answer so every submitter is a winner.
    */
   async function postAndResolve(
-    winnerTokenIds: bigint[],
     submitterAccounts: { tokenId: bigint; account: any }[],
   ): Promise<bigint> {
     const questionHash = keccak256(
@@ -123,7 +109,7 @@ describe('RewardDistributor', () => {
     const answer = 'correct-answer';
     const answerHash = keccak256(toHex(answer));
 
-    // Phase 1: Submit - all submitters submit the same answer hash
+    // Phase 1: Submit
     for (const { tokenId, account } of submitterAccounts) {
       await problemManager.write.submitAnswer(
         [problemId, tokenId, answerHash],
@@ -131,10 +117,10 @@ describe('RewardDistributor', () => {
       );
     }
 
-    // Advance past submit deadline (5 min) into reveal phase
+    // Advance past submit deadline into reveal phase
     await connection.networkHelpers.time.increase(SUBMIT_DURATION + 1n);
 
-    // Phase 2: Reveal - all submitters reveal their plaintext answer
+    // Phase 2: Reveal
     for (const { tokenId, account } of submitterAccounts) {
       await problemManager.write.revealAnswer(
         [problemId, tokenId, answer],
@@ -142,10 +128,10 @@ describe('RewardDistributor', () => {
       );
     }
 
-    // Advance past reveal + verify deadlines (2 min reveal + 3 min verify)
+    // Advance past reveal + verify deadlines
     await connection.networkHelpers.time.increase(REVEAL_DURATION + VERIFY_DURATION + 1n);
 
-    // Phase 4: Oracle resolves - winners auto-determined from revealed answers
+    // Phase 4: Oracle resolves
     await problemManager.write.resolveByOracle(
       [problemId, answerHash],
       { account: oracle.account },
@@ -155,28 +141,28 @@ describe('RewardDistributor', () => {
   }
 
   // ──────────────────────────────────────────────
-  // distributeRewards
+  // distributeRewards - tier pool calculations
   // ──────────────────────────────────────────────
 
   describe('distributeRewards', () => {
     it('should calculate Bronze tier pool correctly (20% of round reward)', async () => {
       const problemId = await postAndResolve(
-        [1n],
         [{ tokenId: 1n, account: user1.account }],
       );
 
       const roundReward = await afgToken.read.currentRewardPerRound();
-      const expectedTierPool = (roundReward * BRONZE_BPS) / 10000n;
-      const expectedDevFee = (expectedTierPool * DEV_BPS) / 10000n;
+      const expectedBronzePool = (roundReward * BRONZE_BPS) / 10000n;
+      const expectedDevFee = (expectedBronzePool * DEV_BPS) / 10000n;
       const expectedVerifierFee =
-        (expectedTierPool * VERIFIERS_BPS) / 10000n;
+        (expectedBronzePool * VERIFIERS_BPS) / 10000n;
 
       const devBefore = await afgToken.read.balanceOf([
         devWallet.account.address,
       ]);
 
+      // Only Bronze winners, Silver and Gold empty
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [1n]],
+        [problemId, [1n], [], []],
         { account: oracle.account },
       );
 
@@ -185,52 +171,77 @@ describe('RewardDistributor', () => {
       ]);
       const devReceived = devAfter - devBefore;
 
-      // Dev wallet should receive dev fee + verifier fee
+      // Dev wallet should receive dev fee + verifier fee (no verifiers set)
       assert.equal(devReceived, expectedDevFee + expectedVerifierFee);
 
-      // totalDistributed should equal the tier pool
+      // totalDistributed should equal only the Bronze pool
       const totalDist = await rewardDistributor.read.totalDistributed();
-      assert.equal(totalDist, expectedTierPool);
+      assert.equal(totalDist, expectedBronzePool);
     });
 
-    it('should calculate Silver tier pool correctly (30% of round reward)', async () => {
-      const problemId = await postAndResolve(
-        [2n],
+    it('should accumulate Silver and Gold pools when empty', async () => {
+      // After the first distribution with only Bronze winners,
+      // Silver and Gold pools should have accumulated
+      const roundReward = await afgToken.read.currentRewardPerRound();
+      const expectedSilverUnspent = (roundReward * SILVER_BPS) / 10000n;
+      const expectedGoldUnspent = (roundReward * GOLD_BPS) / 10000n;
+
+      const silverUnspent = await rewardDistributor.read.unspentPool([1]);
+      const goldUnspent = await rewardDistributor.read.unspentPool([2]);
+
+      assert.equal(silverUnspent, expectedSilverUnspent);
+      assert.equal(goldUnspent, expectedGoldUnspent);
+    });
+
+    it('should distribute accumulated pool when tier gets winners', async () => {
+      // Do a second round with only Bronze winners to accumulate more
+      const problemId2 = await postAndResolve(
         [{ tokenId: 2n, account: user2.account }],
       );
 
       const roundReward = await afgToken.read.currentRewardPerRound();
-      const expectedTierPool = (roundReward * SILVER_BPS) / 10000n;
+      const silverPerRound = (roundReward * SILVER_BPS) / 10000n;
 
-      const totalDistBefore = await rewardDistributor.read.totalDistributed();
+      const silverUnspentBefore = await rewardDistributor.read.unspentPool([1]);
 
       await rewardDistributor.write.distributeRewards(
-        [problemId, 1, [2n]],
+        [problemId2, [2n], [], []],
         { account: oracle.account },
       );
 
-      const totalDistAfter = await rewardDistributor.read.totalDistributed();
-      assert.equal(totalDistAfter - totalDistBefore, expectedTierPool);
-    });
+      // Silver should have accumulated 2 rounds now
+      const silverUnspentAfter = await rewardDistributor.read.unspentPool([1]);
+      assert.equal(silverUnspentAfter, silverUnspentBefore + silverPerRound);
 
-    it('should calculate Gold tier pool correctly (50% of round reward)', async () => {
-      const problemId = await postAndResolve(
-        [3n],
-        [{ tokenId: 3n, account: user3.account }],
+      // Now do a third round with Bronze + Silver winners
+      const problemId3 = await postAndResolve(
+        [
+          { tokenId: 1n, account: user1.account },
+          { tokenId: 3n, account: user3.account },
+        ],
       );
 
-      const roundReward = await afgToken.read.currentRewardPerRound();
-      const expectedTierPool = (roundReward * GOLD_BPS) / 10000n;
-
       const totalDistBefore = await rewardDistributor.read.totalDistributed();
+      const silverAccumulated = await rewardDistributor.read.unspentPool([1]);
 
+      // Bronze: [1n], Silver: [3n], Gold: []
       await rewardDistributor.write.distributeRewards(
-        [problemId, 2, [3n]],
+        [problemId3, [1n], [3n], []],
         { account: oracle.account },
       );
 
+      // Silver unspent should be cleared
+      const silverUnspentFinal = await rewardDistributor.read.unspentPool([1]);
+      assert.equal(silverUnspentFinal, 0n);
+
+      // totalDistributed should include the accumulated Silver pool
       const totalDistAfter = await rewardDistributor.read.totalDistributed();
-      assert.equal(totalDistAfter - totalDistBefore, expectedTierPool);
+      const bronzePool = (roundReward * BRONZE_BPS) / 10000n;
+      const silverPool = silverPerRound + silverAccumulated; // current + accumulated
+      assert.equal(
+        totalDistAfter - totalDistBefore,
+        bronzePool + silverPool,
+      );
     });
   });
 
@@ -241,7 +252,6 @@ describe('RewardDistributor', () => {
   describe('1st place gets more than runners-up', () => {
     it('should allocate more to 1st place than each runner-up', async () => {
       const problemId = await postAndResolve(
-        [1n, 2n, 3n],
         [
           { tokenId: 1n, account: user1.account },
           { tokenId: 2n, account: user2.account },
@@ -249,7 +259,6 @@ describe('RewardDistributor', () => {
         ],
       );
 
-      // Record pending rewards before
       const user1Before = await rewardDistributor.read.pendingRewards([
         user1.account.address,
       ]);
@@ -258,7 +267,7 @@ describe('RewardDistributor', () => {
       ]);
 
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [1n, 2n, 3n]],
+        [problemId, [1n, 2n, 3n], [], []],
         { account: oracle.account },
       );
 
@@ -286,20 +295,19 @@ describe('RewardDistributor', () => {
   describe('Dev fee deduction', () => {
     it('should mint dev fee to devWallet', async () => {
       const problemId = await postAndResolve(
-        [4n],
         [{ tokenId: 4n, account: user4.account }],
       );
 
       const roundReward = await afgToken.read.currentRewardPerRound();
-      const tierPool = (roundReward * BRONZE_BPS) / 10000n;
-      const expectedDevFee = (tierPool * DEV_BPS) / 10000n;
+      const bronzePool = (roundReward * BRONZE_BPS) / 10000n;
+      const expectedDevFee = (bronzePool * DEV_BPS) / 10000n;
 
       const devBefore = await afgToken.read.balanceOf([
         devWallet.account.address,
       ]);
 
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [4n]],
+        [problemId, [4n], [], []],
         { account: oracle.account },
       );
 
@@ -308,8 +316,8 @@ describe('RewardDistributor', () => {
       ]);
       const devReceived = devAfter - devBefore;
 
-      // devWallet receives dev fee + verifier fee
-      const expectedVerifierFee = (tierPool * VERIFIERS_BPS) / 10000n;
+      // devWallet receives dev fee + verifier fee (no verifiers)
+      const expectedVerifierFee = (bronzePool * VERIFIERS_BPS) / 10000n;
       assert.equal(devReceived, expectedDevFee + expectedVerifierFee);
       assert.ok(expectedDevFee > 0n, 'Dev fee should be > 0');
     });
@@ -321,19 +329,16 @@ describe('RewardDistributor', () => {
 
   describe('claimRewards', () => {
     it('should allow user to claim accumulated rewards', async () => {
-      // user1 should have pending rewards from the previous distribution tests
       const pending = await rewardDistributor.read.pendingRewards([
         user1.account.address,
       ]);
 
       if (pending === 0n) {
-        // Ensure user1 has rewards by distributing once more
         const problemId = await postAndResolve(
-          [1n],
           [{ tokenId: 1n, account: user1.account }],
         );
         await rewardDistributor.write.distributeRewards(
-          [problemId, 0, [1n]],
+          [problemId, [1n], [], []],
           { account: oracle.account },
         );
       }
@@ -380,11 +385,10 @@ describe('RewardDistributor', () => {
     it('should emit RewardsClaimed event', async () => {
       // Give user5 some rewards
       const problemId = await postAndResolve(
-        [5n],
         [{ tokenId: 5n, account: user5.account }],
       );
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [5n]],
+        [problemId, [5n], [], []],
         { account: oracle.account },
       );
 
@@ -407,12 +411,11 @@ describe('RewardDistributor', () => {
       const xpBefore = statsBefore.xp;
 
       const problemId = await postAndResolve(
-        [1n],
         [{ tokenId: 1n, account: user1.account }],
       );
 
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [1n]],
+        [problemId, [1n], [], []],
         { account: oracle.account },
       );
 
@@ -428,7 +431,6 @@ describe('RewardDistributor', () => {
       const xpBefore = statsBefore.xp;
 
       const problemId = await postAndResolve(
-        [1n, 2n],
         [
           { tokenId: 1n, account: user1.account },
           { tokenId: 2n, account: user2.account },
@@ -436,7 +438,7 @@ describe('RewardDistributor', () => {
       );
 
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [1n, 2n]],
+        [problemId, [1n, 2n], [], []],
         { account: oracle.account },
       );
 
@@ -454,7 +456,6 @@ describe('RewardDistributor', () => {
         .problemsSolved;
 
       const problemId = await postAndResolve(
-        [1n, 2n],
         [
           { tokenId: 1n, account: user1.account },
           { tokenId: 2n, account: user2.account },
@@ -462,7 +463,7 @@ describe('RewardDistributor', () => {
       );
 
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [1n, 2n]],
+        [problemId, [1n, 2n], [], []],
         { account: oracle.account },
       );
 
@@ -476,12 +477,10 @@ describe('RewardDistributor', () => {
     });
 
     it('should grant more XP to first place than runners-up (Bronze tier)', async () => {
-      // BRONZE: first = 20, runners = 10
       const xpBefore1 = (await agentNFA.read.getStats([1n])).xp;
       const xpBefore2 = (await agentNFA.read.getStats([2n])).xp;
 
       const problemId = await postAndResolve(
-        [1n, 2n],
         [
           { tokenId: 1n, account: user1.account },
           { tokenId: 2n, account: user2.account },
@@ -489,7 +488,7 @@ describe('RewardDistributor', () => {
       );
 
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [1n, 2n]],
+        [problemId, [1n, 2n], [], []],
         { account: oracle.account },
       );
 
@@ -513,20 +512,17 @@ describe('RewardDistributor', () => {
   describe('problemRewarded', () => {
     it('should prevent double distribution for the same problem', async () => {
       const problemId = await postAndResolve(
-        [1n],
         [{ tokenId: 1n, account: user1.account }],
       );
 
-      // First distribution succeeds
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [1n]],
+        [problemId, [1n], [], []],
         { account: oracle.account },
       );
 
-      // Second distribution should revert
       await assert.rejects(
         rewardDistributor.write.distributeRewards(
-          [problemId, 0, [1n]],
+          [problemId, [1n], [], []],
           { account: oracle.account },
         ),
         (err: any) => {
@@ -541,7 +537,6 @@ describe('RewardDistributor', () => {
 
     it('should mark problem as rewarded after distribution', async () => {
       const problemId = await postAndResolve(
-        [2n],
         [{ tokenId: 2n, account: user2.account }],
       );
 
@@ -551,7 +546,7 @@ describe('RewardDistributor', () => {
       assert.equal(rewardedBefore, false);
 
       await rewardDistributor.write.distributeRewards(
-        [problemId, 0, [2n]],
+        [problemId, [2n], [], []],
         { account: oracle.account },
       );
 
@@ -563,13 +558,12 @@ describe('RewardDistributor', () => {
 
     it('should revert when non-oracle calls distributeRewards', async () => {
       const problemId = await postAndResolve(
-        [3n],
         [{ tokenId: 3n, account: user3.account }],
       );
 
       await assert.rejects(
         rewardDistributor.write.distributeRewards(
-          [problemId, 0, [3n]],
+          [problemId, [3n], [], []],
           { account: user1.account },
         ),
         (err: any) => {
@@ -583,7 +577,6 @@ describe('RewardDistributor', () => {
     });
 
     it('should revert when problem is not resolved', async () => {
-      // Post a problem but do NOT go through the lifecycle to resolve it
       const questionHash = keccak256(toHex('unresolved-problem'));
       await problemManager.write.postProblem([questionHash], {
         account: oracle.account,
@@ -593,7 +586,7 @@ describe('RewardDistributor', () => {
 
       await assert.rejects(
         rewardDistributor.write.distributeRewards(
-          [unresolvedId, 0, [1n]],
+          [unresolvedId, [1n], [], []],
           { account: oracle.account },
         ),
         (err: any) => {

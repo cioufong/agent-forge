@@ -205,12 +205,12 @@ describe('Integration: Full Flow', () => {
     assert.equal(winners[0], tokenId1);
 
     // ──────────────────────────────────────────────
-    // 9. Distribute rewards (Bronze tier, tier=0)
+    // 9. Distribute rewards (Bronze winners only)
     // ──────────────────────────────────────────────
     const user1BalanceBefore = await afgToken.read.balanceOf([user1.account.address]);
 
     await rewardDistributor.write.distributeRewards(
-      [problemId, 0, [tokenId1]],  // tier 0 = Bronze
+      [problemId, [tokenId1], [], []],  // bronzeWinners, silverWinners, goldWinners
       {account: oracle.account},
     );
 
@@ -251,7 +251,7 @@ describe('Integration: Full Flow', () => {
     // ──────────────────────────────────────────────
     await assert.rejects(
       rewardDistributor.write.distributeRewards(
-        [problemId, 0, [tokenId1]],
+        [problemId, [tokenId1], [], []],
         {account: oracle.account},
       ),
       (err: any) => {
@@ -346,7 +346,7 @@ describe('Integration: Full Flow', () => {
     // 6. Distribute and verify
     // ──────────────────────────────────────────────
     await rewardDistributor.write.distributeRewards(
-      [problemId, 0, [1n, tokenId3]],
+      [problemId, [1n, tokenId3], [], []],
       {account: oracle.account},
     );
 

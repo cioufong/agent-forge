@@ -16,10 +16,14 @@ import "./VerifierElection.sol";
  *   - Silver (Level 8-14): 30% of round reward
  *   - Gold (Level 15-20): 50% of round reward
  *
+ *   If a tier has no winners, its pool accumulates and carries
+ *   over to the next round. When that tier has winners again,
+ *   they receive the accumulated pool.
+ *
  *   Within each tier:
  *   - 50% to 1st place
  *   - 40% to 2nd-5th place (split equally)
- *   - 8% to verifiers (Phase 2)
+ *   - 8% to verifiers
  *   - 2% to dev wallet
  *
  *   Pull pattern: rewards accumulate, users claim
@@ -47,6 +51,11 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     uint64 public constant GOLD_XP_MIN = 40;
     uint64 public constant GOLD_XP_MAX = 80;
 
+    /// @notice Intelligence bonus: each INT point above base (8) gives 100 BPS (1%) bonus
+    /// Max 10 points above base = 1000 BPS = 10% bonus at INT 18
+    uint256 public constant INT_BASE = 8;
+    uint256 public constant INT_BONUS_PER_POINT = 100; // 100 BPS = 1%
+
     // ============ State ============
 
     AFGToken public immutable afgToken;
@@ -64,9 +73,12 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     /// @notice Track which problems have been rewarded
     mapping(uint256 => bool) public problemRewarded;
 
+    /// @notice Accumulated unspent pools per tier (rolls over when no winners)
+    mapping(uint8 => uint256) public unspentPool;
+
     // ============ Events ============
 
-    event RewardsDistributed(uint256 indexed problemId, uint8 tier, uint256 totalAmount, uint256[] winnerTokenIds);
+    event RewardsDistributed(uint256 indexed problemId, uint256 totalAmount);
     event RewardsClaimed(address indexed account, uint256 amount);
     event DevWalletUpdated(address indexed newDevWallet);
 
@@ -117,106 +129,68 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     // ============ Distribution ============
 
     /**
-     * @notice Distribute rewards for a resolved problem
+     * @notice Distribute rewards for a resolved problem across all three tiers.
+     *   If a tier has no winners, its pool accumulates for the next round.
      * @param problemId The resolved problem
-     * @param tier 0=Bronze, 1=Silver, 2=Gold
-     * @param winnerTokenIds Ordered winners (1st, 2nd, 3rd, 4th, 5th)
+     * @param bronzeWinners Ordered Bronze-tier winners (1st, 2nd, 3rd, 4th, 5th)
+     * @param silverWinners Ordered Silver-tier winners
+     * @param goldWinners Ordered Gold-tier winners
      */
     function distributeRewards(
         uint256 problemId,
-        uint8 tier,
-        uint256[] calldata winnerTokenIds
+        uint256[] calldata bronzeWinners,
+        uint256[] calldata silverWinners,
+        uint256[] calldata goldWinners
     ) external whenNotPaused {
-        // Only oracle (same as ProblemManager's oracle) can distribute
         if (msg.sender != problemManager.oracle()) revert OnlyOracle();
         if (problemRewarded[problemId]) revert AlreadyRewarded();
 
-        // Verify problem is resolved
         ProblemManager.Problem memory prob = problemManager.getProblem(problemId);
         if (!prob.resolved) revert ProblemNotResolved();
 
         problemRewarded[problemId] = true;
 
-        // Calculate round reward
         uint256 roundReward = afgToken.currentRewardPerRound();
         if (roundReward == 0) return;
 
-        // Calculate tier pool
-        uint256 tierPool;
-        if (tier == 0) tierPool = (roundReward * BRONZE_BPS) / 10000;
-        else if (tier == 1) tierPool = (roundReward * SILVER_BPS) / 10000;
-        else tierPool = (roundReward * GOLD_BPS) / 10000;
+        uint256 distributed;
 
-        if (tierPool == 0) return;
-
-        // Dev fee
-        uint256 devFee = (tierPool * DEV_BPS) / 10000;
-        if (devFee > 0) {
-            afgToken.mint(devWallet, devFee);
+        // Bronze
+        uint256 bronzePool = (roundReward * BRONZE_BPS) / 10000 + unspentPool[0];
+        if (bronzeWinners.length > 0) {
+            _distributeTierRewards(problemId, 0, bronzePool, bronzeWinners);
+            distributed += bronzePool;
+            unspentPool[0] = 0;
+        } else {
+            unspentPool[0] = bronzePool;
         }
 
-        // Verifier fee — distribute to honest verifiers, or devWallet if none
-        uint256 verifierFee = (tierPool * VERIFIERS_BPS) / 10000;
-        if (verifierFee > 0) {
-            bool distributed = false;
-            if (address(verifierElection) != address(0)) {
-                uint256[] memory honestVerifiers = verifierElection.getHonestVerifiers(problemId);
-                if (honestVerifiers.length > 0) {
-                    uint256 perVerifier = verifierFee / honestVerifiers.length;
-                    afgToken.mint(address(this), verifierFee);
-                    for (uint256 i = 0; i < honestVerifiers.length; i++) {
-                        address verifierOwner = agentNFA.ownerOf(honestVerifiers[i]);
-                        pendingRewards[verifierOwner] += perVerifier;
-                    }
-                    distributed = true;
-                }
-            }
-            if (!distributed) {
-                afgToken.mint(devWallet, verifierFee);
-            }
+        // Silver
+        uint256 silverPool = (roundReward * SILVER_BPS) / 10000 + unspentPool[1];
+        if (silverWinners.length > 0) {
+            _distributeTierRewards(problemId, 1, silverPool, silverWinners);
+            distributed += silverPool;
+            unspentPool[1] = 0;
+        } else {
+            unspentPool[1] = silverPool;
         }
 
-        uint256 prizePool = tierPool - devFee - verifierFee;
-
-        if (winnerTokenIds.length > 0) {
-            // 1st place: 50% of prize pool
-            uint256 firstPrize = (prizePool * FIRST_PLACE_BPS) / (FIRST_PLACE_BPS + RUNNERS_UP_BPS);
-
-            address firstOwner = agentNFA.ownerOf(winnerTokenIds[0]);
-            pendingRewards[firstOwner] += firstPrize;
-            afgToken.mint(address(this), firstPrize);
-
-            // Grant XP to winner
-            uint64 xpAmount = _getXPForTier(tier, true);
-            agentNFA.grantXP(winnerTokenIds[0], xpAmount);
-            agentNFA.recordSolve(winnerTokenIds[0]);
-
-            // 2nd-5th place: split remaining prize pool
-            if (winnerTokenIds.length > 1) {
-                uint256 runnersUpTotal = prizePool - firstPrize;
-                uint256 perRunner = runnersUpTotal / (winnerTokenIds.length - 1);
-
-                for (uint256 i = 1; i < winnerTokenIds.length; i++) {
-                    address runnerOwner = agentNFA.ownerOf(winnerTokenIds[i]);
-                    pendingRewards[runnerOwner] += perRunner;
-                    afgToken.mint(address(this), perRunner);
-
-                    uint64 runnerXP = _getXPForTier(tier, false);
-                    agentNFA.grantXP(winnerTokenIds[i], runnerXP);
-                    agentNFA.recordSolve(winnerTokenIds[i]);
-                }
-            }
+        // Gold
+        uint256 goldPool = (roundReward * GOLD_BPS) / 10000 + unspentPool[2];
+        if (goldWinners.length > 0) {
+            _distributeTierRewards(problemId, 2, goldPool, goldWinners);
+            distributed += goldPool;
+            unspentPool[2] = 0;
+        } else {
+            unspentPool[2] = goldPool;
         }
 
-        totalDistributed += tierPool;
-        emit RewardsDistributed(problemId, tier, tierPool, winnerTokenIds);
+        totalDistributed += distributed;
+        emit RewardsDistributed(problemId, distributed);
     }
 
     // ============ Claim ============
 
-    /**
-     * @notice Claim accumulated rewards
-     */
     function claimRewards() external nonReentrant whenNotPaused {
         uint256 amount = pendingRewards[msg.sender];
         if (amount == 0) revert NoRewards();
@@ -230,9 +204,89 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
 
     // ============ Internal ============
 
+    function _distributeTierRewards(
+        uint256 problemId,
+        uint8 tier,
+        uint256 pool,
+        uint256[] calldata winnerTokenIds
+    ) internal {
+        // Dev fee
+        uint256 devFee = (pool * DEV_BPS) / 10000;
+        if (devFee > 0) {
+            afgToken.mint(devWallet, devFee);
+        }
+
+        // Verifier fee
+        uint256 verifierFee = (pool * VERIFIERS_BPS) / 10000;
+        if (verifierFee > 0) {
+            bool vDistributed = false;
+            if (address(verifierElection) != address(0)) {
+                uint256[] memory honestVerifiers = verifierElection.getHonestVerifiers(problemId);
+                if (honestVerifiers.length > 0) {
+                    uint256 perVerifier = verifierFee / honestVerifiers.length;
+                    afgToken.mint(address(this), verifierFee);
+                    for (uint256 i = 0; i < honestVerifiers.length; i++) {
+                        address verifierOwner = agentNFA.ownerOf(honestVerifiers[i]);
+                        pendingRewards[verifierOwner] += perVerifier;
+                    }
+                    vDistributed = true;
+                }
+            }
+            if (!vDistributed) {
+                afgToken.mint(devWallet, verifierFee);
+            }
+        }
+
+        uint256 prizePool = pool - devFee - verifierFee;
+
+        // 1st place: 50% of prize pool
+        uint256 firstPrize = (prizePool * FIRST_PLACE_BPS) / (FIRST_PLACE_BPS + RUNNERS_UP_BPS);
+        uint256 firstBonus = _intBonus(firstPrize, winnerTokenIds[0]);
+        uint256 firstTotal = firstPrize + firstBonus;
+
+        address firstOwner = agentNFA.ownerOf(winnerTokenIds[0]);
+        pendingRewards[firstOwner] += firstTotal;
+        afgToken.mint(address(this), firstTotal);
+
+        uint64 xpAmount = _applyIntBonusXP(_getXPForTier(tier, true), winnerTokenIds[0]);
+        agentNFA.grantXP(winnerTokenIds[0], xpAmount);
+        agentNFA.recordSolve(winnerTokenIds[0]);
+
+        // 2nd-5th place: split remaining prize pool
+        if (winnerTokenIds.length > 1) {
+            uint256 runnersUpTotal = prizePool - firstPrize;
+            uint256 perRunner = runnersUpTotal / (winnerTokenIds.length - 1);
+
+            for (uint256 i = 1; i < winnerTokenIds.length; i++) {
+                uint256 runnerBonus = _intBonus(perRunner, winnerTokenIds[i]);
+                uint256 runnerTotal = perRunner + runnerBonus;
+
+                address runnerOwner = agentNFA.ownerOf(winnerTokenIds[i]);
+                pendingRewards[runnerOwner] += runnerTotal;
+                afgToken.mint(address(this), runnerTotal);
+
+                uint64 runnerXP = _applyIntBonusXP(_getXPForTier(tier, false), winnerTokenIds[i]);
+                agentNFA.grantXP(winnerTokenIds[i], runnerXP);
+                agentNFA.recordSolve(winnerTokenIds[i]);
+            }
+        }
+    }
+
     function _getXPForTier(uint8 tier, bool isFirst) internal pure returns (uint64) {
         if (tier == 0) return isFirst ? BRONZE_XP_MAX : BRONZE_XP_MIN;
         if (tier == 1) return isFirst ? SILVER_XP_MAX : SILVER_XP_MIN;
         return isFirst ? GOLD_XP_MAX : GOLD_XP_MIN;
+    }
+
+    function _intBonus(uint256 baseAmount, uint256 tokenId) internal view returns (uint256) {
+        AgentNFA.AgentTraits memory t = agentNFA.getTraits(tokenId);
+        uint256 bonusBps = uint256(t.intelligence - INT_BASE) * INT_BONUS_PER_POINT;
+        return (baseAmount * bonusBps) / 10000;
+    }
+
+    function _applyIntBonusXP(uint64 baseXP, uint256 tokenId) internal view returns (uint64) {
+        AgentNFA.AgentTraits memory t = agentNFA.getTraits(tokenId);
+        uint256 bonusBps = uint256(t.intelligence - INT_BASE) * INT_BONUS_PER_POINT;
+        return uint64(uint256(baseXP) + (uint256(baseXP) * bonusBps) / 10000);
     }
 }
