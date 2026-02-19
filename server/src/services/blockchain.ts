@@ -133,6 +133,21 @@ export function getABI(name: string): any[] {
   throw new Error(`ABI not found for ${name}`)
 }
 
+// ============ Pause Check ============
+
+export async function isProblemManagerPaused(): Promise<boolean> {
+  try {
+    const client = getPublicClient()
+    const addr = getContracts()
+    const abi = getABI('ProblemManager')
+    return await client.readContract({
+      address: addr.problemManager, abi, functionName: 'paused',
+    }) as boolean
+  } catch {
+    return false
+  }
+}
+
 // ============ Contract Read Helpers ============
 
 export async function getAgentNFAData(tokenId: bigint) {

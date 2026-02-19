@@ -5,7 +5,7 @@
  */
 
 import { keccak256, toHex } from 'viem'
-import { postProblemOnChain } from './blockchain.js'
+import { postProblemOnChain, isProblemManagerPaused } from './blockchain.js'
 import { insertProblem } from './database.js'
 import { registerCorrectAnswer, scheduleOracleResolution, broadcastPhaseChange } from './answer-validator.js'
 import type { Server as SocketServer } from 'socket.io'
@@ -136,6 +136,12 @@ export async function startProblemGenerator(io: SocketServer): Promise<void> {
 
   const generateAndPost = async () => {
     try {
+      // Skip if ProblemManager contract is paused
+      if (await isProblemManagerPaused()) {
+        console.log('[problem] ProblemManager is paused, skipping generation')
+        return
+      }
+
       const seed = Date.now()
       const round = problemCounter
       let difficulty: string

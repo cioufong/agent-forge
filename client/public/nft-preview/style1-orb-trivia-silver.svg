@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#140e20"/>
+      <stop offset="100%" stop-color="#08060c"/>
+    </radialGradient>
+    <radialGradient id="orb" cx="40%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#d4a5ff"/>
+      <stop offset="40%" stop-color="#9b59b6"/>
+      <stop offset="100%" stop-color="#4a1a6b"/>
+    </radialGradient>
+    <radialGradient id="orbInner" cx="45%" cy="40%" r="40%">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aura" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9b59b6" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#9b59b6" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="g1"><feGaussianBlur stdDeviation="2"/></filter>
+    <filter id="g2"><feGaussianBlur stdDeviation="5"/></filter>
+    <filter id="g3"><feGaussianBlur stdDeviation="10"/></filter>
+    <filter id="g4"><feGaussianBlur stdDeviation="20"/></filter>
+  </defs>
+
+  <rect width="400" height="400" fill="url(#bg)"/>
+
+  <!-- Silver frame with corner gems -->
+  <rect x="6" y="6" width="388" height="388" rx="16" fill="none" stroke="#C0C0C0" stroke-width="2" opacity="0.6"/>
+  <rect x="12" y="12" width="376" height="376" rx="12" fill="none" stroke="#C0C0C0" stroke-width="0.5" opacity="0.25"/>
+  <polygon points="20,20 26,14 32,20 26,26" fill="#C0C0C0" opacity="0.5"/>
+  <polygon points="368,20 374,14 380,20 374,26" fill="#C0C0C0" opacity="0.5"/>
+  <polygon points="20,380 26,374 32,380 26,386" fill="#C0C0C0" opacity="0.5"/>
+  <polygon points="368,380 374,374 380,380 374,386" fill="#C0C0C0" opacity="0.5"/>
+
+  <!-- Aura -->
+  <circle cx="200" cy="185" r="155" fill="url(#aura)"/>
+
+  <!-- Orbit rings (Legendary = 3 rings) -->
+  <ellipse cx="200" cy="185" rx="130" ry="36" fill="none" stroke="#9b59b6" stroke-width="0.8" opacity="0.25" transform="rotate(-20,200,185)"/>
+  <ellipse cx="200" cy="185" rx="115" ry="40" fill="none" stroke="#d4a5ff" stroke-width="0.6" opacity="0.2" transform="rotate(35,200,185)"/>
+  <ellipse cx="200" cy="185" rx="100" ry="32" fill="none" stroke="#9b59b6" stroke-width="0.5" opacity="0.15" transform="rotate(-55,200,185)"/>
+
+  <!-- Main orb glow -->
+  <circle cx="200" cy="185" r="95" fill="#9b59b6" opacity="0.08" filter="url(#g4)"/>
+  <circle cx="200" cy="185" r="75" fill="#9b59b6" opacity="0.15" filter="url(#g3)"/>
+
+  <!-- Main orb -->
+  <circle cx="200" cy="185" r="70" fill="url(#orb)"/>
+  <circle cx="200" cy="185" r="70" fill="url(#orbInner)"/>
+
+  <!-- Orb surface -->
+  <ellipse cx="178" cy="158" rx="32" ry="24" fill="#fff" opacity="0.1" transform="rotate(-15,178,158)"/>
+  <ellipse cx="175" cy="153" rx="14" ry="9" fill="#fff" opacity="0.2" transform="rotate(-15,175,153)"/>
+
+  <!-- Trivia symbol -->
+  <text x="200" y="196" fill="#fff" font-size="34" text-anchor="middle" font-family="serif" opacity="0.5">&#x2734;</text>
+
+  <!-- Inner rune marks (Legendary flair) -->
+  <g opacity="0.12">
+    <text x="172" y="215" fill="#fff" font-size="10" font-family="serif">&#x2606;</text>
+    <text x="220" y="165" fill="#fff" font-size="10" font-family="serif">&#x2606;</text>
+    <text x="190" y="155" fill="#fff" font-size="8" font-family="serif">&#x25C7;</text>
+    <text x="215" y="220" fill="#fff" font-size="8" font-family="serif">&#x25C7;</text>
+  </g>
+
+  <!-- Orbiting particles (Legendary = 4 particles, varied sizes) -->
+  <circle cx="75" cy="150" r="6" fill="#d4a5ff" filter="url(#g1)" opacity="0.7"/>
+  <circle cx="75" cy="150" r="3" fill="#fff" opacity="0.8"/>
+
+  <circle cx="315" cy="225" r="5" fill="#9b59b6" filter="url(#g1)" opacity="0.6"/>
+  <circle cx="315" cy="225" r="2.5" fill="#fff" opacity="0.8"/>
+
+  <circle cx="240" cy="68" r="5.5" fill="#d4a5ff" filter="url(#g1)" opacity="0.7"/>
+  <circle cx="240" cy="68" r="2.5" fill="#fff" opacity="0.9"/>
+
+  <circle cx="130" cy="285" r="4.5" fill="#9b59b6" filter="url(#g1)" opacity="0.6"/>
+  <circle cx="130" cy="285" r="2" fill="#fff" opacity="0.8"/>
+
+  <!-- Ground reflection -->
+  <ellipse cx="200" cy="315" rx="70" ry="12" fill="#9b59b6" opacity="0.07" filter="url(#g2)"/>
+
+  <text x="200" y="350" fill="#C0C0C0" font-size="15" text-anchor="middle" font-family="monospace" font-weight="bold">Agent #128</text>
+  <text x="200" y="370" fill="#556" font-size="10" text-anchor="middle" font-family="monospace">Lv.8 Silver | Trivia | Legendary</text>
+</svg>
