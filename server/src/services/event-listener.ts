@@ -7,6 +7,7 @@
 import { type Log } from 'viem'
 import { getPublicClient, getContracts, getABI, getAgentNFAData, getWinnersOnChain } from './blockchain.js'
 import { upsertAgent, insertSubmission, markSubmissionRevealed, updateAgentStats, incrementAgentSolved, upsertLeaderboard, insertRewardHistory, markSubmissionCorrect } from './database.js'
+import { pauseGenerator, resumeGenerator } from './problem-generator.js'
 import type { Server as SocketServer } from 'socket.io'
 
 let unwatchFns: Array<() => void> = []
@@ -327,6 +328,36 @@ export async function startEventListener(io: SocketServer): Promise<void> {
     unwatchFns.push(unwatch)
   } catch (err: any) {
     console.warn(`[events] OracleFallbackTriggered watcher failed: ${err.message}`)
+  }
+
+  // ────── ProblemManager: Paused / Unpaused ──────
+  try {
+    const pmABI = getABI('ProblemManager')
+    const unwatchPaused = client.watchContractEvent({
+      address: addrs.problemManager,
+      abi: pmABI,
+      eventName: 'Paused',
+      onLogs: () => {
+        console.log('[event] ProblemManager Paused')
+        pauseGenerator()
+        io.emit('contract-paused', { contract: 'ProblemManager' })
+      },
+    })
+    unwatchFns.push(unwatchPaused)
+
+    const unwatchUnpaused = client.watchContractEvent({
+      address: addrs.problemManager,
+      abi: pmABI,
+      eventName: 'Unpaused',
+      onLogs: () => {
+        console.log('[event] ProblemManager Unpaused')
+        resumeGenerator()
+        io.emit('contract-unpaused', { contract: 'ProblemManager' })
+      },
+    })
+    unwatchFns.push(unwatchUnpaused)
+  } catch (err: any) {
+    console.warn(`[events] ProblemManager Paused/Unpaused watcher failed: ${err.message}`)
   }
 
   console.log('[events] All event listeners started')

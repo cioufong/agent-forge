@@ -11,8 +11,8 @@ const __dirname = path.dirname(__filename)
 dotenv.config({ path: path.resolve(__dirname, '../.env') })
 
 import { initializeDatabase, getAgent, getLeaderboard, getCurrentProblem as getDBCurrentProblem, getRecentProblems, getSubmissionsForProblem, getRewardHistory } from './services/database.js'
-import { initContracts, getContracts, getAgentNFAData } from './services/blockchain.js'
-import { startProblemGenerator, getCurrentProblem } from './services/problem-generator.js'
+import { initContracts, getContracts, getAgentNFAData, isProblemManagerPaused } from './services/blockchain.js'
+import { startProblemGenerator, getCurrentProblem, pauseGenerator } from './services/problem-generator.js'
 import { startEventListener } from './services/event-listener.js'
 
 const PORT = Number(process.env.PORT ?? 3001)
@@ -191,7 +191,15 @@ async function bootstrap() {
     console.warn(`[init] Event listener failed (dev mode OK): ${err.message}`)
   }
 
+  // Check initial pause state before starting generator
+  let initiallyPaused = false
+  try {
+    initiallyPaused = await isProblemManagerPaused()
+    if (initiallyPaused) console.log('[init] ProblemManager is paused, generator will wait for Unpaused event')
+  } catch { /* assume not paused */ }
+
   await startProblemGenerator(io)
+  if (initiallyPaused) pauseGenerator()
 
   server.listen(PORT, () => {
     console.log(`\n🚀 AgentForge server running on http://localhost:${PORT}`)

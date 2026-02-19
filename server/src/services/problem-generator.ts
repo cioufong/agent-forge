@@ -5,7 +5,7 @@
  */
 
 import { keccak256, toHex } from 'viem'
-import { postProblemOnChain, isProblemManagerPaused } from './blockchain.js'
+import { postProblemOnChain } from './blockchain.js'
 import { insertProblem } from './database.js'
 import { registerCorrectAnswer, scheduleOracleResolution, broadcastPhaseChange } from './answer-validator.js'
 import type { Server as SocketServer } from 'socket.io'
@@ -30,6 +30,8 @@ const PROBLEM_INTERVAL = parseInt(process.env.PROBLEM_INTERVAL || '660000', 10) 
 let currentProblem: Problem | null = null
 let problemCounter = 0
 let intervalHandle: ReturnType<typeof setInterval> | null = null
+let paused = false
+let ioRef: SocketServer | null = null
 
 // ============ Problem Templates ============
 
@@ -134,14 +136,12 @@ export function getCurrentProblem(): Problem | null {
 export async function startProblemGenerator(io: SocketServer): Promise<void> {
   console.log(`[problem] Generator starting (interval: ${PROBLEM_INTERVAL}ms)`)
 
-  const generateAndPost = async () => {
-    try {
-      // Skip if ProblemManager contract is paused
-      if (await isProblemManagerPaused()) {
-        console.log('[problem] ProblemManager is paused, skipping generation')
-        return
-      }
+  ioRef = io
 
+  const generateAndPost = async () => {
+    if (paused) return
+
+    try {
       const seed = Date.now()
       const round = problemCounter
       let difficulty: string
@@ -218,6 +218,26 @@ export async function startProblemGenerator(io: SocketServer): Promise<void> {
 
   // Then every PROBLEM_INTERVAL
   intervalHandle = setInterval(generateAndPost, PROBLEM_INTERVAL)
+}
+
+export function pauseGenerator(): void {
+  if (paused) return
+  paused = true
+  if (intervalHandle) {
+    clearInterval(intervalHandle)
+    intervalHandle = null
+  }
+  console.log('[problem] Generator paused (contract paused)')
+}
+
+export function resumeGenerator(): void {
+  if (!paused) return
+  paused = false
+  console.log('[problem] Generator resumed (contract unpaused)')
+  if (ioRef) {
+    // Re-start: generate immediately then set interval
+    startProblemGenerator(ioRef)
+  }
 }
 
 export function stopProblemGenerator(): void {
