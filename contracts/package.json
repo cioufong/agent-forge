@@ -1,0 +1,40 @@
+{
+  "name": "@agent-forge/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat deploy",
+    "deploy:bsc-testnet": "hardhat deploy --network bscTestnet",
+    "deploy:bsc": "hardhat deploy --network bsc",
+    "deploy:local": "hardhat deploy --network localhost",
+    "node": "hardhat node --export deployments/localhost.json",
+    "export:testnet": "rocketh-export -e bscTestnet --ts ../client/src/types/generated/deployments.ts --json ../client/src/types/generated/deployments.json",
+    "export:mainnet": "rocketh-export -e bsc --ts ../client/src/types/generated/deployments.ts --json ../client/src/types/generated/deployments.json"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-keystore": "^3.0.4",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.3",
+    "@nomicfoundation/hardhat-node-test-runner": "^3.0.8",
+    "@nomicfoundation/hardhat-viem": "^3.0.2",
+    "@rocketh/deploy": "^0.18.2",
+    "@rocketh/export": "^0.18.5",
+    "@rocketh/node": "^0.18.5",
+    "@rocketh/read-execute": "^0.18.3",
+    "@rocketh/signer": "^0.18.2",
+    "@rocketh/verifier": "^0.18.5",
+    "@rocketh/viem": "^0.18.2",
+    "@types/node": "^25.2.3",
+    "dotenv": "^17.2.4",
+    "hardhat": "^3.1.8",
+    "hardhat-deploy": "^2.0.0-next.76",
+    "rocketh": "^0.18.4",
+    "typescript": "^5.9.3",
+    "viem": "^2.45.3"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0"
+  }
+}

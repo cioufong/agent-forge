@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.env
+*.log
+
+# Hardhat
+contracts/cache/
+contracts/artifacts/
+contracts/generated/
+contracts/deployments/
+
+# Server
+server/data/
+
+# Client
+client/src/types/generated/
+
+# IDE
+.vscode/
+.idea/
+
