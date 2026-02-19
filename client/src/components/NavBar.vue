@@ -48,6 +48,7 @@ const navLinks = computed(() => [
   { to: '/activity', label: t('nav.battle'), name: 'activity' },
   { to: '/leaderboard', label: t('nav.rankings'), name: 'leaderboard' },
   { to: '/mint', label: t('nav.summon'), name: 'mint' },
+  { to: '/my-agents', label: t('nav.myAgents'), name: 'my-agents' },
   { to: '/rewards', label: t('nav.loot'), name: 'rewards' },
 ])
 </script>
