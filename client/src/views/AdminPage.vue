@@ -50,6 +50,7 @@ const {
   setDevWallet,
   setSwapThreshold,
   setSwapEnabled,
+  setRouter,
   checkTaxExempt,
   setTaxExempt,
 } = useAdmin()
@@ -65,6 +66,7 @@ const exemptInput = ref('')
 const exemptStatus = ref<boolean | null>(null)
 const exemptChecked = ref(false)
 const swapThresholdInput = ref('')
+const routerInput = ref('')
 
 const contractNames: (keyof ContractStates)[] = ['AFGToken', 'AgentNFA', 'ProblemManager', 'RewardDistributor']
 
@@ -131,6 +133,14 @@ async function handleSetSwapThreshold() {
 async function handleToggleSwapEnabled() {
   processingAction.value = 'swapEnabled'
   await setSwapEnabled(!currentSwapEnabled.value)
+  processingAction.value = null
+}
+
+async function handleSetRouter() {
+  if (!routerInput.value) return
+  processingAction.value = 'router'
+  await setRouter(routerInput.value as Address)
+  routerInput.value = ''
   processingAction.value = null
 }
 
@@ -351,14 +361,36 @@ async function handleSetExempt(exempt: boolean) {
           </div>
         </div>
 
-        <div v-if="currentRouterAddress" class="flex items-center justify-between gap-3 text-[9px]">
+        <div class="flex items-center justify-between gap-3 text-[9px]">
           <span class="text-[var(--color-text-secondary)] shrink-0">Router</span>
-          <a
-            :href="`${explorerUrl}/address/${currentRouterAddress}`"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-[var(--color-primary)] hover:underline text-[8px] font-mono"
-          >{{ shortenAddress(currentRouterAddress) }} &nearr;</a>
+          <div class="flex items-center gap-2">
+            <a
+              v-if="currentRouterAddress"
+              :href="`${explorerUrl}/address/${currentRouterAddress}`"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-[var(--color-primary)] hover:underline text-[8px] font-mono"
+            >{{ shortenAddress(currentRouterAddress) }} &nearr;</a>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 text-[9px]">
+          <span class="text-[var(--color-text-secondary)] shrink-0">Set Router</span>
+          <div class="flex items-center gap-2">
+            <input
+              v-model="routerInput"
+              type="text"
+              placeholder="0x..."
+              class="rpg-input w-48 text-[8px]"
+            />
+            <button
+              @click="handleSetRouter"
+              :disabled="processingAction !== null || !routerInput"
+              class="rpg-btn !text-[8px] !px-3 !py-1"
+            >
+              {{ processingAction === 'router' ? t('admin.processing') : t('admin.set') }}
+            </button>
+          </div>
         </div>
       </div>
 

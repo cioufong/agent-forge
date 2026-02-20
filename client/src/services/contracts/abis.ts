@@ -26,6 +26,7 @@ export const AFG_TOKEN_ABI = [
   { type: 'function', name: 'swapEnabled', inputs: [], outputs: [{ type: 'bool' }], stateMutability: 'view' },
   { type: 'function', name: 'setSwapThreshold', inputs: [{ name: '_threshold', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
   { type: 'function', name: 'setSwapEnabled', inputs: [{ name: '_enabled', type: 'bool' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'setRouter', inputs: [{ name: '_router', type: 'address' }], outputs: [], stateMutability: 'nonpayable' },
   { type: 'event', name: 'TaxSwapped', inputs: [
     { name: 'afgAmount', type: 'uint256', indexed: false },
     { name: 'bnbAmount', type: 'uint256', indexed: false },

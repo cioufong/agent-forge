@@ -295,6 +295,30 @@ export function useAdmin() {
     }
   }
 
+  async function setRouter(addr: Address): Promise<boolean> {
+    const wallet = getWalletClient()
+    if (!wallet || !account.value) return false
+
+    error.value = null
+    try {
+      const client = getPublicClient()
+      const hash = await wallet.writeContract({
+        address: getContractAddress('AFGToken'),
+        abi: AFG_TOKEN_ABI,
+        functionName: 'setRouter',
+        args: [addr],
+        chain: TARGET_CHAIN,
+        account: account.value,
+      })
+      await client.waitForTransactionReceipt({ hash })
+      await fetchAdminData()
+      return true
+    } catch (err: any) {
+      error.value = err.message
+      return false
+    }
+  }
+
   async function checkTaxExempt(addr: Address): Promise<boolean | null> {
     try {
       const client = getPublicClient()
@@ -354,6 +378,7 @@ export function useAdmin() {
     setDevWallet,
     setSwapThreshold,
     setSwapEnabled,
+    setRouter,
     checkTaxExempt,
     setTaxExempt,
   }

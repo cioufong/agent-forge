@@ -40,7 +40,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
 
     uint256 public immutable deployedAt;
     address public immutable treasury;
-    IUniswapV2Router02 public immutable router;
+    IUniswapV2Router02 public router;
 
     /// @notice Total AFG minted via mining
     uint256 public totalMined;
@@ -74,6 +74,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
     event TaxBpsUpdated(uint256 newBps);
     event SwapThresholdUpdated(uint256 newThreshold);
     event SwapEnabledUpdated(bool enabled);
+    event RouterUpdated(address indexed newRouter);
     event TaxSwapped(uint256 afgAmount, uint256 bnbAmount);
 
     error OnlyMinter();
@@ -141,6 +142,13 @@ contract AFGToken is ERC20, Ownable, Pausable {
     function setSwapEnabled(bool _enabled) external onlyOwner {
         swapEnabled = _enabled;
         emit SwapEnabledUpdated(_enabled);
+    }
+
+    function setRouter(address _router) external onlyOwner {
+        if (_router == address(0)) revert ZeroAddress();
+        router = IUniswapV2Router02(_router);
+        _approve(address(this), _router, type(uint256).max);
+        emit RouterUpdated(_router);
     }
 
     function pause() external onlyOwner {
