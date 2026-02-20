@@ -163,12 +163,12 @@ onUnmounted(() => {
         <div class="rpg-box text-center">
           <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.supply') }}</div>
           <div class="text-[14px] text-[var(--color-primary)] mt-2">{{ formatNumber(afgSupply) }}</div>
-          <div class="text-[8px] text-[var(--color-text-secondary)]">AFG</div>
+          <div class="text-[8px] text-[var(--color-text-secondary)] flex items-center justify-center gap-1"><img src="/afg-token.svg" class="w-3 h-3" alt="AFG" />AFG</div>
         </div>
         <div class="rpg-box text-center">
           <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.mined') }}</div>
           <div class="text-[14px] text-[var(--color-xp)] mt-2">{{ formatNumber(totalMined) }}</div>
-          <div class="text-[8px] text-[var(--color-text-secondary)]">AFG</div>
+          <div class="text-[8px] text-[var(--color-text-secondary)] flex items-center justify-center gap-1"><img src="/afg-token.svg" class="w-3 h-3" alt="AFG" />AFG</div>
         </div>
         <div class="rpg-box text-center">
           <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.reward') }}</div>

@@ -38,12 +38,12 @@ async function handleClaim() {
         <div class="rpg-box relative text-center">
           <span class="rpg-box-title">{{ t('loot.inventory') }}</span>
           <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider mt-2">{{ t('loot.afgBalance') }}</div>
-          <div class="text-[16px] text-[var(--color-primary)] mt-2">{{ balance }}</div>
+          <div class="text-[16px] text-[var(--color-primary)] mt-2 flex items-center justify-center gap-1"><img src="/afg-token.svg" class="w-4 h-4" alt="AFG" />{{ balance }}</div>
         </div>
         <div class="rpg-box relative text-center">
           <span class="rpg-box-title">{{ t('loot.pending') }}</span>
           <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider mt-2">{{ t('loot.unclaimed') }}</div>
-          <div class="text-[16px] text-[var(--color-gold)] mt-2">{{ pendingRewards }}</div>
+          <div class="text-[16px] text-[var(--color-gold)] mt-2 flex items-center justify-center gap-1"><img src="/afg-token.svg" class="w-4 h-4" alt="AFG" />{{ pendingRewards }}</div>
         </div>
       </div>
 
