@@ -226,6 +226,43 @@ export function useAdmin() {
     }
   }
 
+  async function checkDexPair(addr: Address): Promise<boolean | null> {
+    try {
+      const client = getPublicClient()
+      return await client.readContract({
+        address: getContractAddress('AFGToken'),
+        abi: AFG_TOKEN_ABI,
+        functionName: 'isDexPair',
+        args: [addr],
+      }) as boolean
+    } catch {
+      return null
+    }
+  }
+
+  async function setDexPair(addr: Address, enabled: boolean): Promise<boolean> {
+    const wallet = getWalletClient()
+    if (!wallet || !account.value) return false
+
+    error.value = null
+    try {
+      const client = getPublicClient()
+      const hash = await wallet.writeContract({
+        address: getContractAddress('AFGToken'),
+        abi: AFG_TOKEN_ABI,
+        functionName: 'setDexPair',
+        args: [addr, enabled],
+        chain: TARGET_CHAIN,
+        account: account.value,
+      })
+      await client.waitForTransactionReceipt({ hash })
+      return true
+    } catch (err: any) {
+      error.value = err.message
+      return false
+    }
+  }
+
   return {
     isOwner,
     isLoading,
@@ -243,5 +280,7 @@ export function useAdmin() {
     withdrawFees,
     setDexTaxBps,
     setDevWallet,
+    checkDexPair,
+    setDexPair,
   }
 }

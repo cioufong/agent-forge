@@ -45,6 +45,8 @@ const {
   withdrawFees,
   setDexTaxBps,
   setDevWallet,
+  checkDexPair,
+  setDexPair,
 } = useAdmin()
 
 const isInitializing = ref(true)
@@ -54,6 +56,9 @@ const processingAction = ref<string | null>(null)
 const mintPriceInput = ref('')
 const dexTaxInput = ref('')
 const devWalletInput = ref('')
+const dexPairInput = ref('')
+const dexPairStatus = ref<boolean | null>(null)
+const dexPairChecked = ref(false)
 
 const contractNames: (keyof ContractStates)[] = ['AFGToken', 'AgentNFA', 'ProblemManager', 'RewardDistributor']
 
@@ -113,6 +118,24 @@ async function handleSetDevWallet() {
   processingAction.value = 'devWallet'
   await setDevWallet(devWalletInput.value as Address)
   devWalletInput.value = currentDevWallet.value
+  processingAction.value = null
+}
+
+async function handleCheckDexPair() {
+  if (!dexPairInput.value) return
+  processingAction.value = 'checkPair'
+  dexPairStatus.value = await checkDexPair(dexPairInput.value as Address)
+  dexPairChecked.value = true
+  processingAction.value = null
+}
+
+async function handleSetDexPair(enabled: boolean) {
+  if (!dexPairInput.value) return
+  processingAction.value = enabled ? 'enablePair' : 'disablePair'
+  const ok = await setDexPair(dexPairInput.value as Address, enabled)
+  if (ok) {
+    dexPairStatus.value = enabled
+  }
   processingAction.value = null
 }
 </script>
@@ -264,6 +287,55 @@ async function handleSetDevWallet() {
               class="rpg-btn !text-[8px] !px-3 !py-1"
             >
               {{ processingAction === 'dexTax' ? t('admin.processing') : t('admin.set') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- DEX Pair Settings -->
+      <div class="rpg-box relative space-y-4">
+        <span class="rpg-box-title">{{ t('admin.dexPairSettings') }}</span>
+
+        <div class="flex items-center gap-2 text-[9px] mt-2">
+          <input
+            v-model="dexPairInput"
+            type="text"
+            :placeholder="t('admin.dexPairPlaceholder')"
+            class="rpg-input flex-1 text-[8px]"
+            @input="dexPairChecked = false"
+          />
+          <button
+            @click="handleCheckDexPair"
+            :disabled="processingAction !== null || !dexPairInput"
+            class="rpg-btn !text-[8px] !px-3 !py-1"
+          >
+            {{ processingAction === 'checkPair' ? t('admin.processing') : t('admin.check') }}
+          </button>
+        </div>
+
+        <div v-if="dexPairChecked" class="flex items-center justify-between text-[9px]">
+          <div class="flex items-center gap-2">
+            <span class="text-[var(--color-text-secondary)]">{{ t('admin.status') }}:</span>
+            <span :class="dexPairStatus ? 'text-[var(--color-xp)]' : 'text-[var(--color-text-secondary)]'">
+              {{ dexPairStatus ? t('admin.taxEnabled') : t('admin.taxDisabled') }}
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              v-if="!dexPairStatus"
+              @click="handleSetDexPair(true)"
+              :disabled="processingAction !== null"
+              class="rpg-btn !text-[8px] !px-3 !py-1"
+            >
+              {{ processingAction === 'enablePair' ? t('admin.processing') : t('admin.enableTax') }}
+            </button>
+            <button
+              v-else
+              @click="handleSetDexPair(false)"
+              :disabled="processingAction !== null"
+              class="rpg-btn !text-[8px] !px-3 !py-1 !border-[var(--color-hp)]"
+            >
+              {{ processingAction === 'disablePair' ? t('admin.processing') : t('admin.disableTax') }}
             </button>
           </div>
         </div>

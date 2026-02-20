@@ -18,6 +18,8 @@ export const AFG_TOKEN_ABI = [
   { type: 'function', name: 'unpause', inputs: [], outputs: [], stateMutability: 'nonpayable' },
   { type: 'function', name: 'dexTaxBps', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
   { type: 'function', name: 'setDexTaxBps', inputs: [{ name: '_bps', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'setDexPair', inputs: [{ name: 'pair', type: 'address' }, { name: 'enabled', type: 'bool' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'isDexPair', inputs: [{ name: '', type: 'address' }], outputs: [{ type: 'bool' }], stateMutability: 'view' },
 ] as const
 
 export const AGENT_NFA_ABI = [

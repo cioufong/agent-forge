@@ -12,7 +12,11 @@
     "deploy:local": "hardhat deploy --network localhost",
     "node": "hardhat node --export deployments/localhost.json",
     "export:testnet": "rocketh-export -e bscTestnet --ts ../client/src/types/generated/deployments.ts --json ../client/src/types/generated/deployments.json",
-    "export:mainnet": "rocketh-export -e bsc --ts ../client/src/types/generated/deployments.ts --json ../client/src/types/generated/deployments.json"
+    "export:mainnet": "rocketh-export -e bsc --ts ../client/src/types/generated/deployments.ts --json ../client/src/types/generated/deployments.json",
+    "add-liquidity:testnet": "hardhat run scripts/add-liquidity.ts --network bscTestnet",
+    "add-liquidity:mainnet": "hardhat run scripts/add-liquidity.ts --network bsc",
+    "renounce:testnet": "hardhat run scripts/renounce.ts --network bscTestnet",
+    "renounce:mainnet": "hardhat run scripts/renounce.ts --network bsc"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-keystore": "^3.0.4",
