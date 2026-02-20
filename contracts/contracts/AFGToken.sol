@@ -78,6 +78,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
     event TaxSwapped(uint256 afgAmount, uint256 bnbAmount);
 
     error OnlyMinter();
+    error OnlySelf();
     error ExceedsMiningPool();
     error ZeroAddress();
     error TaxTooHigh();
@@ -146,6 +147,8 @@ contract AFGToken is ERC20, Ownable, Pausable {
 
     function setRouter(address _router) external onlyOwner {
         if (_router == address(0)) revert ZeroAddress();
+        // Revoke old router approval before setting new one [H-01 fix]
+        _approve(address(this), address(router), 0);
         router = IUniswapV2Router02(_router);
         _approve(address(this), _router, type(uint256).max);
         emit RouterUpdated(_router);
@@ -206,10 +209,10 @@ contract AFGToken is ERC20, Ownable, Pausable {
                 super._update(from, address(this), tax);
                 super._update(from, to, netAmount);
 
-                // Auto-swap if conditions are met
+                // Auto-swap if conditions are met (try-catch to never block transfers) [C-01 fix]
                 if (swapEnabled && !_swapping && balanceOf(address(this)) >= swapThreshold) {
                     _swapping = true;
-                    _swapAndSendBNB(swapThreshold);
+                    try this.executeSwap(swapThreshold) {} catch {}
                     _swapping = false;
                 }
                 return;
@@ -220,12 +223,17 @@ contract AFGToken is ERC20, Ownable, Pausable {
     }
 
     /**
-     * @dev Swap accumulated AFG tax to BNB via PancakeSwap and send to treasury
+     * @notice Execute auto-swap of accumulated AFG tax to BNB. Only callable by this contract.
+     * @dev External so it can be wrapped in try-catch within _update [C-01 fix]
      */
-    function _swapAndSendBNB(uint256 amount) private {
+    function executeSwap(uint256 amount) external {
+        if (msg.sender != address(this)) revert OnlySelf();
+
         address[] memory path = new address[](2);
         path[0] = address(this);
         path[1] = router.WETH();
+
+        uint256 balBefore = treasury.balance;
 
         router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             amount,
@@ -235,7 +243,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
             block.timestamp
         );
 
-        emit TaxSwapped(amount, address(treasury).balance);
+        emit TaxSwapped(amount, treasury.balance - balBefore);
     }
 
     /// @dev Required to receive BNB from router during swap
