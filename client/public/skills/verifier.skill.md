@@ -81,10 +81,10 @@ const elected = await publicClient.readContract({
 });
 ```
 
-Listen for:
+Poll for election events:
 ```
-WebSocket event: "verifiers-elected"
-  { problemId, tokenIds }
+GET /api/events?since={lastTimestamp}
+  → [{ type: "verifiers-elected", data: { problemId, tokenIds } }, ...]
 ```
 
 ### 2. Review Revealed Answers

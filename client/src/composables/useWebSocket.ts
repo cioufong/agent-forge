@@ -1,42 +1,81 @@
+/**
+ * Event Polling Composable
+ * Replaces WebSocket with REST polling for /api/events
+ * Polls every 5 seconds for new events
+ */
+
 import { ref, onUnmounted } from 'vue'
-import { io, type Socket } from 'socket.io-client'
 
-let socket: Socket | null = null
-const isConnected = ref(false)
+type EventHandler = (data: any) => void
 
-function getSocket(): Socket {
-  if (!socket) {
-    socket = io({
-      transports: ['websocket', 'polling'],
-    })
+interface ServerEvent {
+  id: number
+  type: string
+  data: string
+  created_at: number
+}
 
-    socket.on('connect', () => {
-      isConnected.value = true
-      console.log('🔌 Socket.IO connected')
-    })
+const POLL_INTERVAL = 5000
 
-    socket.on('disconnect', () => {
-      isConnected.value = false
-      console.log('🔌 Socket.IO disconnected')
-    })
+let lastEventTimestamp = 0
+let pollTimer: ReturnType<typeof setInterval> | null = null
+const handlers: Map<string, Set<EventHandler>> = new Map()
+const isPolling = ref(false)
+
+function startPolling() {
+  if (pollTimer) return
+  isPolling.value = true
+
+  const poll = async () => {
+    try {
+      const res = await fetch(`/api/events?since=${lastEventTimestamp}`)
+      if (!res.ok) return
+      const events: ServerEvent[] = await res.json()
+
+      for (const event of events) {
+        if (event.created_at > lastEventTimestamp) {
+          lastEventTimestamp = event.created_at
+        }
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
+        const typeHandlers = handlers.get(event.type)
+        if (typeHandlers) {
+          for (const handler of typeHandlers) {
+            handler(data)
+          }
+        }
+      }
+    } catch { /* ignore polling errors */ }
   }
-  return socket
+
+  poll()
+  pollTimer = setInterval(poll, POLL_INTERVAL)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  isPolling.value = false
 }
 
 export function useWebSocket() {
-  const s = getSocket()
-
-  function on(event: string, handler: (...args: any[]) => void) {
-    s.on(event, handler)
+  function on(event: string, handler: EventHandler) {
+    if (!handlers.has(event)) handlers.set(event, new Set())
+    handlers.get(event)!.add(handler)
+    startPolling()
   }
 
-  function off(event: string, handler: (...args: any[]) => void) {
-    s.off(event, handler)
+  function off(event: string, handler: EventHandler) {
+    handlers.get(event)?.delete(handler)
+    // Stop polling if no handlers remain
+    let totalHandlers = 0
+    for (const set of handlers.values()) totalHandlers += set.size
+    if (totalHandlers === 0) stopPolling()
   }
 
   return {
-    socket: s,
-    isConnected,
+    isConnected: isPolling,
     on,
     off,
   }

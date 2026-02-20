@@ -10,6 +10,13 @@ const { t } = useI18n()
 const { isConnected, account, getPublicClient } = useWeb3()
 const { getAgentsByOwner, getTraits, getStats, getTier } = useAgentNFA()
 
+const copiedId = ref<number | null>(null)
+function copyTokenId(tokenId: number) {
+  navigator.clipboard.writeText(tokenId.toString())
+  copiedId.value = tokenId
+  setTimeout(() => { if (copiedId.value === tokenId) copiedId.value = null }, 2000)
+}
+
 interface AgentInfo {
   tokenId: number
   tier: number
@@ -109,11 +116,18 @@ watch(account, () => { if (account.value) loadAgents() })
         class="rpg-box block no-underline hover:no-underline hover:!border-[var(--color-primary)] transition-colors"
       >
         <div class="flex items-center justify-between gap-4">
-          <!-- Left: ID + Tier + Level -->
+          <!-- Left: ID + Copy + Tier + Level -->
           <div class="flex items-center gap-4">
             <div class="text-center min-w-[48px]">
               <div class="text-[16px] text-[var(--color-primary)]">#{{ agent.tokenId }}</div>
-              <div class="text-[8px] uppercase" :style="{ color: tierColors[agent.tier] }">
+              <button
+                class="text-[7px] px-1.5 py-0.5 border border-[var(--color-border)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors mt-0.5"
+                :class="copiedId === agent.tokenId ? 'text-[var(--color-xp)] !border-[var(--color-xp)]' : 'text-[var(--color-text-secondary)]'"
+                @click.prevent.stop="copyTokenId(agent.tokenId)"
+              >
+                {{ copiedId === agent.tokenId ? t('myAgents.copied') : t('myAgents.copyId') }}
+              </button>
+              <div class="text-[8px] uppercase mt-0.5" :style="{ color: tierColors[agent.tier] }">
                 {{ t(`common.tier.${tierNames[agent.tier]}`) }}
               </div>
             </div>

@@ -3,14 +3,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import cors from 'cors'
-import http from 'http'
-import { Server } from 'socket.io'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 dotenv.config({ path: path.resolve(__dirname, '../.env') })
 
-import { initializeDatabase, getAgent, getLeaderboard, getCurrentProblem as getDBCurrentProblem, getRecentProblems, getSubmissionsForProblem, getRewardHistory } from './services/database.js'
+import { initializeDatabase, getAgent, getLeaderboard, getCurrentProblem as getDBCurrentProblem, getRecentProblems, getSubmissionsForProblem, getRewardHistory, getRecentEvents } from './services/database.js'
 import { initContracts, getContracts, getAgentNFAData, isProblemManagerPaused } from './services/blockchain.js'
 import { startProblemGenerator, getCurrentProblem, pauseGenerator } from './services/problem-generator.js'
 import { startEventListener } from './services/event-listener.js'
@@ -22,11 +20,6 @@ const allowedOrigins = CLIENT_ORIGIN.split(',').map((o) => o.trim())
 const app = express()
 app.use(express.json())
 app.use(cors({ origin: allowedOrigins, credentials: true }))
-
-const server = http.createServer(app)
-const io = new Server(server, {
-  cors: { origin: allowedOrigins, credentials: true },
-})
 
 // ============ Health ============
 
@@ -75,7 +68,6 @@ app.get('/api/agents/:tokenId', async (req, res) => {
 })
 
 // Current problem (with phase deadlines)
-// Optional ?tokenId=N for future per-NFA question variants (Phase 2)
 app.get('/api/problems/current', (_req, res) => {
   const problem = getCurrentProblem()
   if (!problem) {
@@ -101,7 +93,6 @@ app.get('/api/problems/current', (_req, res) => {
     else if (submitDeadline && now > submitDeadline) phase = 'reveal'
   }
 
-  // MVP: same question for everyone. Phase 2 will use tokenId for per-NFA variants
   res.json({
     id: problem.id,
     questionText: problem.questionText,
@@ -149,29 +140,12 @@ app.get('/api/rewards/:tokenId', (req, res) => {
   res.json(history)
 })
 
-// ============ Socket.IO ============
-
-io.on('connection', (socket) => {
-  console.log(`[ws] Client connected: ${socket.id}`)
-
-  // Send current problem + phase on connect
-  const problem = getCurrentProblem()
-  if (problem) {
-    const dbProblem = getDBCurrentProblem()
-    socket.emit('current-problem', {
-      id: problem.id,
-      category: problem.category,
-      difficulty: problem.difficulty,
-      questionHash: problem.questionHash,
-      submitDeadline: dbProblem?.submit_deadline || dbProblem?.deadline,
-      revealDeadline: dbProblem?.reveal_deadline,
-      verifyDeadline: dbProblem?.verify_deadline,
-    })
-  }
-
-  socket.on('disconnect', () => {
-    console.log(`[ws] Client disconnected: ${socket.id}`)
-  })
+// Event polling — replaces WebSocket
+app.get('/api/events', (req, res) => {
+  const since = parseInt(req.query.since as string, 10) || 0
+  const limit = Math.min(parseInt(req.query.limit as string, 10) || 100, 500)
+  const events = getRecentEvents(since, limit)
+  res.json(events)
 })
 
 // ============ Bootstrap ============
@@ -186,7 +160,7 @@ async function bootstrap() {
   }
 
   try {
-    await startEventListener(io)
+    await startEventListener()
   } catch (err: any) {
     console.warn(`[init] Event listener failed (dev mode OK): ${err.message}`)
   }
@@ -198,10 +172,10 @@ async function bootstrap() {
     if (initiallyPaused) console.log('[init] ProblemManager is paused, generator will wait for Unpaused event')
   } catch { /* assume not paused */ }
 
-  await startProblemGenerator(io)
   if (initiallyPaused) pauseGenerator()
+  await startProblemGenerator()
 
-  server.listen(PORT, () => {
+  app.listen(PORT, () => {
     console.log(`\n🚀 AgentForge server running on http://localhost:${PORT}`)
     console.log(`   Client origin: ${CLIENT_ORIGIN}`)
     console.log(`   Lifecycle: Submit(5min) → Reveal(2min) → Verify(3min) → Resolve`)

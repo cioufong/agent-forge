@@ -173,6 +173,21 @@ function runMigrations(database: Database.Database, currentVersion: number): voi
         ALTER TABLE submissions ADD COLUMN revealed_answer_hash TEXT;
       `,
     },
+    {
+      version: 7,
+      name: 'create_events_table',
+      up: `
+        CREATE TABLE IF NOT EXISTS events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          type TEXT NOT NULL,
+          data TEXT NOT NULL DEFAULT '{}',
+          created_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+        CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+      `,
+    },
   ]
 
   for (const migration of migrations) {
@@ -362,4 +377,20 @@ export function incrementAgentSolved(tokenId: number): void {
   database.prepare(`
     UPDATE agents SET problems_solved = problems_solved + 1, updated_at = ? WHERE token_id = ?
   `).run(Date.now(), tokenId)
+}
+
+// ============ Events ============
+
+export function insertEvent(type: string, data: Record<string, unknown> = {}): void {
+  const database = getDatabase()
+  database.prepare(`
+    INSERT INTO events (type, data, created_at) VALUES (?, ?, ?)
+  `).run(type, JSON.stringify(data), Date.now())
+}
+
+export function getRecentEvents(since: number = 0, limit: number = 100): any[] {
+  const database = getDatabase()
+  return database.prepare(
+    'SELECT id, type, data, created_at FROM events WHERE created_at > ? ORDER BY id ASC LIMIT ?'
+  ).all(since, limit)
 }

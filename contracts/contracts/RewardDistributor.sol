@@ -21,8 +21,8 @@ import "./VerifierElection.sol";
  *   they receive the accumulated pool.
  *
  *   Within each tier:
- *   - 50% to 1st place
- *   - 40% to 2nd-5th place (split equally)
+ *   - 20% bonus to 1st place (fastest correct)
+ *   - 70% split equally among ALL correct answers (including 1st)
  *   - 8% to verifiers
  *   - 2% to dev wallet
  *
@@ -38,10 +38,10 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     uint256 public constant GOLD_BPS = 5000;   // 50%
 
     /// @notice Within-tier distribution
-    uint256 public constant FIRST_PLACE_BPS = 5000;    // 50%
-    uint256 public constant RUNNERS_UP_BPS = 4000;      // 40% (split among 2-5th)
-    uint256 public constant VERIFIERS_BPS = 800;         // 8%
-    uint256 public constant DEV_BPS = 200;               // 2%
+    uint256 public constant FIRST_BONUS_BPS = 2000;      // 20% bonus to 1st place
+    uint256 public constant ALL_CORRECT_BPS = 7000;      // 70% split among ALL correct (incl. 1st)
+    uint256 public constant VERIFIERS_BPS = 800;          // 8%
+    uint256 public constant DEV_BPS = 200;                // 2%
 
     /// @notice XP rewards per tier
     uint64 public constant BRONZE_XP_MIN = 10;
@@ -238,37 +238,31 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
         }
 
         uint256 prizePool = pool - devFee - verifierFee;
+        uint256 winnerCount = winnerTokenIds.length;
 
-        // 1st place: 50% of prize pool
-        uint256 firstPrize = (prizePool * FIRST_PLACE_BPS) / (FIRST_PLACE_BPS + RUNNERS_UP_BPS);
-        uint256 firstBonus = _intBonus(firstPrize, winnerTokenIds[0]);
-        uint256 firstTotal = firstPrize + firstBonus;
+        // 1st place bonus: 20% of prize pool (extra on top of equal share)
+        uint256 firstBonus = (prizePool * FIRST_BONUS_BPS) / (FIRST_BONUS_BPS + ALL_CORRECT_BPS);
+        uint256 firstBonusWithInt = firstBonus + _intBonus(firstBonus, winnerTokenIds[0]);
 
         address firstOwner = agentNFA.ownerOf(winnerTokenIds[0]);
-        pendingRewards[firstOwner] += firstTotal;
-        afgToken.mint(address(this), firstTotal);
+        pendingRewards[firstOwner] += firstBonusWithInt;
+        afgToken.mint(address(this), firstBonusWithInt);
 
-        uint64 xpAmount = _applyIntBonusXP(_getXPForTier(tier, true), winnerTokenIds[0]);
-        agentNFA.grantXP(winnerTokenIds[0], xpAmount);
-        agentNFA.recordSolve(winnerTokenIds[0]);
+        // Equal share: 70% split among ALL correct answers (including 1st)
+        uint256 equalPool = prizePool - firstBonus;
+        uint256 perWinner = equalPool / winnerCount;
 
-        // 2nd-5th place: split remaining prize pool
-        if (winnerTokenIds.length > 1) {
-            uint256 runnersUpTotal = prizePool - firstPrize;
-            uint256 perRunner = runnersUpTotal / (winnerTokenIds.length - 1);
+        for (uint256 i = 0; i < winnerCount; i++) {
+            uint256 share = perWinner + _intBonus(perWinner, winnerTokenIds[i]);
 
-            for (uint256 i = 1; i < winnerTokenIds.length; i++) {
-                uint256 runnerBonus = _intBonus(perRunner, winnerTokenIds[i]);
-                uint256 runnerTotal = perRunner + runnerBonus;
+            address winnerOwner = agentNFA.ownerOf(winnerTokenIds[i]);
+            pendingRewards[winnerOwner] += share;
+            afgToken.mint(address(this), share);
 
-                address runnerOwner = agentNFA.ownerOf(winnerTokenIds[i]);
-                pendingRewards[runnerOwner] += runnerTotal;
-                afgToken.mint(address(this), runnerTotal);
-
-                uint64 runnerXP = _applyIntBonusXP(_getXPForTier(tier, false), winnerTokenIds[i]);
-                agentNFA.grantXP(winnerTokenIds[i], runnerXP);
-                agentNFA.recordSolve(winnerTokenIds[i]);
-            }
+            bool isFirst = (i == 0);
+            uint64 xpAmount = _applyIntBonusXP(_getXPForTier(tier, isFirst), winnerTokenIds[i]);
+            agentNFA.grantXP(winnerTokenIds[i], xpAmount);
+            agentNFA.recordSolve(winnerTokenIds[i]);
         }
     }
 

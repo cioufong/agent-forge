@@ -8,8 +8,7 @@
 
 import { keccak256, toHex } from 'viem'
 import { resolveByOracleOnChain, distributeRewardsOnChain, isProblemResolvedOnChain, getWinnersOnChain, getAgentNFAData } from './blockchain.js'
-import { resolveProblem as resolveInDB } from './database.js'
-import type { Server as SocketServer } from 'socket.io'
+import { resolveProblem as resolveInDB, insertEvent } from './database.js'
 
 // Track correct answers per problem (from problem-generator)
 const correctAnswers: Map<number, { answer: string; answerHash: string }> = new Map()
@@ -25,7 +24,7 @@ export function registerCorrectAnswer(problemId: number, answer: string): void {
 /**
  * Oracle fallback: resolve a problem after verify deadline if not already resolved
  */
-export async function oracleResolve(problemId: number, io: SocketServer): Promise<void> {
+export async function oracleResolve(problemId: number): Promise<void> {
   const entry = correctAnswers.get(problemId)
   if (!entry) {
     console.warn(`[oracle] Problem #${problemId}: no correct answer registered`)
@@ -37,7 +36,7 @@ export async function oracleResolve(problemId: number, io: SocketServer): Promis
     const resolved = await isProblemResolvedOnChain(BigInt(problemId))
     if (resolved) {
       console.log(`[oracle] Problem #${problemId} already resolved on-chain`)
-      broadcastResolution(problemId, io)
+      await emitResolution(problemId)
       correctAnswers.delete(problemId)
       return
     }
@@ -88,16 +87,15 @@ export async function oracleResolve(problemId: number, io: SocketServer): Promis
       }
     }
 
-    // Broadcast results
-    io.emit('problem-resolved', {
+    // Store event
+    insertEvent('problem-resolved', {
       problemId,
       winnerTokenIds: winners.map(w => Number(w)),
       oracleFallback: true,
     })
   } catch (err: any) {
     console.warn(`[oracle] On-chain resolution failed: ${err.message}`)
-    // Still broadcast for UI update
-    io.emit('problem-resolved', {
+    insertEvent('problem-resolved', {
       problemId,
       winnerTokenIds: [],
       oracleFallback: true,
@@ -109,12 +107,12 @@ export async function oracleResolve(problemId: number, io: SocketServer): Promis
 }
 
 /**
- * Broadcast resolution status from on-chain data
+ * Store resolution event from on-chain data
  */
-async function broadcastResolution(problemId: number, io: SocketServer): Promise<void> {
+async function emitResolution(problemId: number): Promise<void> {
   try {
     const winners = await getWinnersOnChain(BigInt(problemId))
-    io.emit('problem-resolved', {
+    insertEvent('problem-resolved', {
       problemId,
       winnerTokenIds: winners.map(w => Number(w)),
       oracleFallback: false,
@@ -125,34 +123,27 @@ async function broadcastResolution(problemId: number, io: SocketServer): Promise
 /**
  * Schedule oracle resolution after verify deadline
  * Called by problem-generator when a new problem is posted.
- *
- * Timeline:
- *   0:00  Submit phase starts
- *   5:00  Submit deadline → Reveal phase
- *   7:00  Reveal deadline → Verify phase
- *  10:00  Verify deadline → Oracle checks and resolves if needed
  */
 export function scheduleOracleResolution(
   problemId: number,
   verifyDeadline: number,
-  io: SocketServer,
 ): void {
   const bufferMs = 10_000 // 10s buffer after verify deadline
   const delayMs = (verifyDeadline * 1000) - Date.now() + bufferMs
 
   if (delayMs <= 0) {
-    oracleResolve(problemId, io)
+    oracleResolve(problemId)
     return
   }
 
-  setTimeout(() => oracleResolve(problemId, io), delayMs)
+  setTimeout(() => oracleResolve(problemId), delayMs)
   console.log(`[oracle] Resolution scheduled for problem #${problemId} in ${Math.round(delayMs / 1000)}s`)
 }
 
 /**
- * Notify clients when phases change (called by problem-generator timers)
+ * Store phase change event (called by problem-generator timers)
  */
-export function broadcastPhaseChange(problemId: number, phase: string, io: SocketServer): void {
-  io.emit('phase-change', { problemId, phase })
+export function broadcastPhaseChange(problemId: number, phase: string): void {
+  insertEvent('phase-change', { problemId, phase })
   console.log(`[phase] Problem #${problemId} → ${phase}`)
 }

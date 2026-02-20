@@ -11,13 +11,21 @@ import { useContractStatus } from '@/composables/useContractStatus'
 
 const { t } = useI18n()
 
-const { totalSupply: afgSupply, totalMined, rewardPerRound, fetchTokenInfo } = useAFGToken()
+const { totalSupply: afgSupply, totalMined, rewardPerRound, currentRound, roundsUntilHalving, fetchTokenInfo } = useAFGToken()
 const { currentProblem, fetchCurrentProblem } = useProblem()
 const { on, off } = useWebSocket()
 const { getPublicClient } = useWeb3()
 
 const { problemManagerPaused } = useContractStatus()
 const totalAgents = ref('0')
+const copiedSkill = ref<string | null>(null)
+
+function copySkillUrl(path: string) {
+  const url = window.location.origin + path
+  navigator.clipboard.writeText(url)
+  copiedSkill.value = path.includes('solver') ? 'solver' : 'verifier'
+  setTimeout(() => { copiedSkill.value = null }, 2000)
+}
 
 function formatNumber(val: string): string {
   const n = Math.floor(Number(val))
@@ -151,7 +159,7 @@ onUnmounted(() => {
     <!-- Live Stats -->
     <section>
       <h2 class="text-center mb-8">{{ $t('home.status') }}</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
         <div class="rpg-box text-center">
           <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.supply') }}</div>
           <div class="text-[14px] text-[var(--color-primary)] mt-2">{{ formatNumber(afgSupply) }}</div>
@@ -171,6 +179,16 @@ onUnmounted(() => {
           <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.agents') }}</div>
           <div class="text-[14px] text-[var(--color-mp)] mt-2">{{ totalAgents }}</div>
           <div class="text-[8px] text-[var(--color-text-secondary)]">{{ $t('home.active') }}</div>
+        </div>
+        <div class="rpg-box text-center">
+          <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.round') }}</div>
+          <div class="text-[14px] text-[var(--color-primary)] mt-2">{{ currentRound }}</div>
+          <div class="text-[8px] text-[var(--color-text-secondary)]">{{ $t('home.currentRound') }}</div>
+        </div>
+        <div class="rpg-box text-center">
+          <div class="text-[8px] text-[var(--color-text-secondary)] uppercase tracking-wider">{{ $t('home.halving') }}</div>
+          <div class="text-[14px] text-[var(--color-gold)] mt-2">{{ roundsUntilHalving }}</div>
+          <div class="text-[8px] text-[var(--color-text-secondary)]">{{ $t('home.roundsLeft') }}</div>
         </div>
       </div>
     </section>
@@ -226,18 +244,28 @@ onUnmounted(() => {
             <h3 class="text-[var(--color-xp)] mb-1">&triangleright; {{ $t('home.solverSkill') }}</h3>
             <p class="text-[var(--color-text-secondary)] text-[9px]">{{ $t('home.solverSkillDesc') }}</p>
           </div>
-          <a href="/skills/solver.skill.md" download class="rpg-btn !text-[8px] !px-3 !py-2 no-underline hover:no-underline shrink-0">
-            {{ $t('home.download') }}
-          </a>
+          <div class="flex gap-2 shrink-0">
+            <a href="/skills/solver.skill.md" target="_blank" class="rpg-btn !text-[8px] !px-3 !py-2 no-underline hover:no-underline">
+              {{ $t('home.viewSkill') }}
+            </a>
+            <button class="rpg-btn-secondary !text-[8px] !px-3 !py-2" @click="copySkillUrl('/skills/solver.skill.md')">
+              {{ copiedSkill === 'solver' ? $t('myAgents.copied') : $t('home.copyUrl') }}
+            </button>
+          </div>
         </div>
         <div class="rpg-box flex items-center justify-between gap-4">
           <div>
             <h3 class="text-[var(--color-mp)] mb-1">&triangleright; {{ $t('home.verifierSkill') }}</h3>
             <p class="text-[var(--color-text-secondary)] text-[9px]">{{ $t('home.verifierSkillDesc') }}</p>
           </div>
-          <a href="/skills/verifier.skill.md" download class="rpg-btn !text-[8px] !px-3 !py-2 no-underline hover:no-underline shrink-0">
-            {{ $t('home.download') }}
-          </a>
+          <div class="flex gap-2 shrink-0">
+            <a href="/skills/verifier.skill.md" target="_blank" class="rpg-btn !text-[8px] !px-3 !py-2 no-underline hover:no-underline">
+              {{ $t('home.viewSkill') }}
+            </a>
+            <button class="rpg-btn-secondary !text-[8px] !px-3 !py-2" @click="copySkillUrl('/skills/verifier.skill.md')">
+              {{ copiedSkill === 'verifier' ? $t('myAgents.copied') : $t('home.copyUrl') }}
+            </button>
+          </div>
         </div>
       </div>
     </section>

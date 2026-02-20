@@ -1,18 +1,17 @@
 /**
  * Event Listener Service
  * Watches on-chain events for the 4-phase problem lifecycle
- * Indexes data into SQLite and broadcasts via Socket.IO
+ * Indexes data into SQLite and stores events for REST polling
  */
 
 import { type Log } from 'viem'
 import { getPublicClient, getContracts, getABI, getAgentNFAData, getWinnersOnChain } from './blockchain.js'
-import { upsertAgent, insertSubmission, markSubmissionRevealed, updateAgentStats, incrementAgentSolved, upsertLeaderboard, insertRewardHistory, markSubmissionCorrect } from './database.js'
+import { upsertAgent, insertSubmission, markSubmissionRevealed, updateAgentStats, incrementAgentSolved, upsertLeaderboard, insertRewardHistory, markSubmissionCorrect, insertEvent } from './database.js'
 import { pauseGenerator, resumeGenerator } from './problem-generator.js'
-import type { Server as SocketServer } from 'socket.io'
 
 let unwatchFns: Array<() => void> = []
 
-export async function startEventListener(io: SocketServer): Promise<void> {
+export async function startEventListener(): Promise<void> {
   console.log('[events] Starting on-chain event listener...')
 
   const client = getPublicClient()
@@ -45,7 +44,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
             createdAt: Math.floor(Date.now() / 1000),
           })
 
-          io.emit('agent-minted', {
+          insertEvent('agent-minted', {
             tokenId: Number(args.tokenId),
             owner: args.to,
           })
@@ -78,7 +77,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
             Math.floor(Date.now() / 1000),
           )
 
-          io.emit('answer-submitted', {
+          insertEvent('answer-submitted', {
             problemId: Number(args.problemId),
             tokenId: Number(args.tokenId),
           })
@@ -109,7 +108,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
             args.answerHash,
           )
 
-          io.emit('answer-revealed', {
+          insertEvent('answer-revealed', {
             problemId: Number(args.problemId),
             tokenId: Number(args.tokenId),
             answerHash: args.answerHash,
@@ -143,7 +142,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
             markSubmissionCorrect(prProblemId, wId)
           }
 
-          io.emit('problem-resolved-chain', {
+          insertEvent('problem-resolved-chain', {
             problemId: prProblemId,
             correctAnswerHash: args.correctAnswerHash,
             winnerTokenIds: winnerIds,
@@ -183,7 +182,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
             } catch { /* best effort */ }
           })()
 
-          io.emit('xp-granted', {
+          insertEvent('xp-granted', {
             tokenId: tokenIdNum,
             amount: xpAmount,
             newLevel,
@@ -242,7 +241,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
             }
           })()
 
-          io.emit('rewards-distributed', {
+          insertEvent('rewards-distributed', {
             problemId: rdProblemId,
             tier: rdTier,
             totalAmount: args.totalAmount?.toString(),
@@ -268,7 +267,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
           if (!args) continue
 
           console.log(`[event] VerifiersElected: problem #${args.problemId}`)
-          io.emit('verifiers-elected', {
+          insertEvent('verifiers-elected', {
             problemId: Number(args.problemId),
             tokenIds: args.tokenIds?.map((id: bigint) => Number(id)) || [],
           })
@@ -293,7 +292,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
           if (!args) continue
 
           console.log(`[event] ConsensusReached: problem #${args.problemId} (${args.agreeCount}/5)`)
-          io.emit('consensus-reached', {
+          insertEvent('consensus-reached', {
             problemId: Number(args.problemId),
             correctAnswer: args.correctAnswer,
             agreeCount: Number(args.agreeCount),
@@ -319,7 +318,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
           if (!args) continue
 
           console.log(`[event] OracleFallbackTriggered: problem #${args.problemId}`)
-          io.emit('oracle-fallback', {
+          insertEvent('oracle-fallback', {
             problemId: Number(args.problemId),
           })
         }
@@ -340,7 +339,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
       onLogs: () => {
         console.log('[event] ProblemManager Paused')
         pauseGenerator()
-        io.emit('contract-paused', { contract: 'ProblemManager' })
+        insertEvent('contract-paused', { contract: 'ProblemManager' })
       },
     })
     unwatchFns.push(unwatchPaused)
@@ -352,7 +351,7 @@ export async function startEventListener(io: SocketServer): Promise<void> {
       onLogs: () => {
         console.log('[event] ProblemManager Unpaused')
         resumeGenerator()
-        io.emit('contract-unpaused', { contract: 'ProblemManager' })
+        insertEvent('contract-unpaused', { contract: 'ProblemManager' })
       },
     })
     unwatchFns.push(unwatchUnpaused)

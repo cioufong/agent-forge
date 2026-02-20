@@ -1,14 +1,13 @@
 /**
  * Problem Generator Service
- * Generates problems on interval, posts on-chain, broadcasts via Socket.IO
+ * Generates problems on interval, posts on-chain, stores events for REST polling
  * Adapted for 4-phase lifecycle: Submit(5min) → Reveal(2min) → Verify(3min) → Resolve
  */
 
 import { keccak256, toHex } from 'viem'
 import { postProblemOnChain } from './blockchain.js'
-import { insertProblem } from './database.js'
+import { insertProblem, insertEvent } from './database.js'
 import { registerCorrectAnswer, scheduleOracleResolution, broadcastPhaseChange } from './answer-validator.js'
-import type { Server as SocketServer } from 'socket.io'
 
 export interface Problem {
   id: number
@@ -31,7 +30,6 @@ let currentProblem: Problem | null = null
 let problemCounter = 0
 let intervalHandle: ReturnType<typeof setInterval> | null = null
 let paused = false
-let ioRef: SocketServer | null = null
 
 // ============ Problem Templates ============
 
@@ -133,10 +131,13 @@ export function getCurrentProblem(): Problem | null {
 
 // ============ Main Loop ============
 
-export async function startProblemGenerator(io: SocketServer): Promise<void> {
+export async function startProblemGenerator(): Promise<void> {
   console.log(`[problem] Generator starting (interval: ${PROBLEM_INTERVAL}ms)`)
 
-  ioRef = io
+  if (paused) {
+    console.log('[problem] Contract is paused, skipping initial generation')
+    return
+  }
 
   const generateAndPost = async () => {
     if (paused) return
@@ -181,8 +182,8 @@ export async function startProblemGenerator(io: SocketServer): Promise<void> {
         console.warn(`[problem] Failed to post on-chain: ${err.message}`)
       }
 
-      // Broadcast new problem to all clients
-      io.emit('new-problem', {
+      // Store new problem event
+      insertEvent('new-problem', {
         id: problem.id,
         category: problem.category,
         difficulty: problem.difficulty,
@@ -192,17 +193,17 @@ export async function startProblemGenerator(io: SocketServer): Promise<void> {
         verifyDeadline,
       })
 
-      // Schedule phase transition notifications
+      // Schedule phase transition events
       const submitDelayMs = SUBMIT_DURATION * 1000
       const revealDelayMs = (SUBMIT_DURATION + REVEAL_DURATION) * 1000
       const verifyDelayMs = (SUBMIT_DURATION + REVEAL_DURATION + VERIFY_DURATION) * 1000
 
-      setTimeout(() => broadcastPhaseChange(problem.id, 'reveal', io), submitDelayMs)
-      setTimeout(() => broadcastPhaseChange(problem.id, 'verify', io), revealDelayMs)
-      setTimeout(() => broadcastPhaseChange(problem.id, 'resolving', io), verifyDelayMs)
+      setTimeout(() => broadcastPhaseChange(problem.id, 'reveal'), submitDelayMs)
+      setTimeout(() => broadcastPhaseChange(problem.id, 'verify'), revealDelayMs)
+      setTimeout(() => broadcastPhaseChange(problem.id, 'resolving'), verifyDelayMs)
 
       // Schedule oracle fallback resolution after verify deadline
-      scheduleOracleResolution(problem.id, verifyDeadline, io)
+      scheduleOracleResolution(problem.id, verifyDeadline)
 
       console.log(`[problem] #${problem.id} [${problem.category}/${problem.difficulty}]: ${problem.questionText}`)
       console.log(`  Submit until ${new Date(submitDeadline * 1000).toLocaleTimeString()}`)
@@ -234,10 +235,8 @@ export function resumeGenerator(): void {
   if (!paused) return
   paused = false
   console.log('[problem] Generator resumed (contract unpaused)')
-  if (ioRef) {
-    // Re-start: generate immediately then set interval
-    startProblemGenerator(ioRef)
-  }
+  // Re-start: generate immediately then set interval
+  startProblemGenerator()
 }
 
 export function stopProblemGenerator(): void {
