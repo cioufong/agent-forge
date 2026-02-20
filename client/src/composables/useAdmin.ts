@@ -36,7 +36,7 @@ export function useAdmin() {
   // Extra read-only state
   const currentMintPrice = ref<string>('0')
   const contractBalance = ref<string>('0')
-  const currentDexTaxBps = ref<number>(0)
+  const currentTaxBps = ref<number>(0)
   const currentDevWallet = ref<string>('')
 
   async function checkOwner(): Promise<boolean> {
@@ -93,7 +93,7 @@ export function useAdmin() {
       client.readContract({
         address: getContractAddress('AFGToken'),
         abi: AFG_TOKEN_ABI,
-        functionName: 'dexTaxBps',
+        functionName: 'taxBps',
       }),
       client.readContract({
         address: getContractAddress('RewardDistributor'),
@@ -104,7 +104,7 @@ export function useAdmin() {
 
     if (results[0].status === 'fulfilled') currentMintPrice.value = formatEther(results[0].value as bigint)
     if (results[1].status === 'fulfilled') contractBalance.value = formatEther(results[1].value as bigint)
-    if (results[2].status === 'fulfilled') currentDexTaxBps.value = Number(results[2].value)
+    if (results[2].status === 'fulfilled') currentTaxBps.value = Number(results[2].value)
     if (results[3].status === 'fulfilled') currentDevWallet.value = results[3].value as string
   }
 
@@ -178,7 +178,7 @@ export function useAdmin() {
     }
   }
 
-  async function setDexTaxBps(bps: number): Promise<boolean> {
+  async function setTaxBps(bps: number): Promise<boolean> {
     const wallet = getWalletClient()
     if (!wallet || !account.value) return false
 
@@ -188,7 +188,7 @@ export function useAdmin() {
       const hash = await wallet.writeContract({
         address: getContractAddress('AFGToken'),
         abi: AFG_TOKEN_ABI,
-        functionName: 'setDexTaxBps',
+        functionName: 'setTaxBps',
         args: [BigInt(bps)],
         chain: TARGET_CHAIN,
         account: account.value,
@@ -226,13 +226,13 @@ export function useAdmin() {
     }
   }
 
-  async function checkDexPair(addr: Address): Promise<boolean | null> {
+  async function checkTaxExempt(addr: Address): Promise<boolean | null> {
     try {
       const client = getPublicClient()
       return await client.readContract({
         address: getContractAddress('AFGToken'),
         abi: AFG_TOKEN_ABI,
-        functionName: 'isDexPair',
+        functionName: 'isTaxExempt',
         args: [addr],
       }) as boolean
     } catch {
@@ -240,7 +240,7 @@ export function useAdmin() {
     }
   }
 
-  async function setDexPair(addr: Address, enabled: boolean): Promise<boolean> {
+  async function setTaxExempt(addr: Address, exempt: boolean): Promise<boolean> {
     const wallet = getWalletClient()
     if (!wallet || !account.value) return false
 
@@ -250,8 +250,8 @@ export function useAdmin() {
       const hash = await wallet.writeContract({
         address: getContractAddress('AFGToken'),
         abi: AFG_TOKEN_ABI,
-        functionName: 'setDexPair',
-        args: [addr, enabled],
+        functionName: 'setTaxExempt',
+        args: [addr, exempt],
         chain: TARGET_CHAIN,
         account: account.value,
       })
@@ -270,7 +270,7 @@ export function useAdmin() {
     contractStates,
     currentMintPrice,
     contractBalance,
-    currentDexTaxBps,
+    currentTaxBps,
     currentDevWallet,
     checkOwner,
     fetchContractStates,
@@ -278,9 +278,9 @@ export function useAdmin() {
     togglePause,
     setMintPrice,
     withdrawFees,
-    setDexTaxBps,
+    setTaxBps,
     setDevWallet,
-    checkDexPair,
-    setDexPair,
+    checkTaxExempt,
+    setTaxExempt,
   }
 }

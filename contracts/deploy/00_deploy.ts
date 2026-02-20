@@ -181,6 +181,36 @@ export default deployScript(
       // May already be set
     }
 
+    // Set tax-exempt for protocol contracts
+    const exemptAddresses = [
+      { name: 'RewardDistributor', address: rewardDistributor.address },
+      { name: 'VerifierElection', address: verifierElection.address },
+    ];
+
+    for (const entry of exemptAddresses) {
+      try {
+        const isExempt = await env.read(afgToken, {
+          functionName: 'isTaxExempt',
+          args: [entry.address],
+        });
+        if (!isExempt) {
+          console.log(`🔗 Setting ${entry.name} as tax-exempt...`);
+          await env.execute(afgToken, {
+            account: deployer,
+            functionName: 'setTaxExempt',
+            args: [entry.address, true],
+          });
+        }
+      } catch {
+        console.log(`🔗 Setting ${entry.name} as tax-exempt (Initial)...`);
+        await env.execute(afgToken, {
+          account: deployer,
+          functionName: 'setTaxExempt',
+          args: [entry.address, true],
+        });
+      }
+    }
+
     console.log('\n🎉 All contracts deployed and wired!');
     console.log('⚠️  Contracts are PAUSED. Run 01_unpause_contracts.ts to activate.');
     console.log({

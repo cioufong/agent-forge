@@ -11,7 +11,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  *   - Total supply cap: 100,000,000 AFG
  *   - 10% (10M) pre-minted to treasury at deploy
  *   - 90% (90M) released via problem-solving mining
- *   - Configurable DEX tax on trades to/from registered DEX pairs (default 3%)
+ *   - Configurable transfer tax (default 3%), with exempt addresses for protocol contracts
  *   - Halving schedule based on elapsed time since deployment
  */
 contract AFGToken is ERC20, Ownable, Pausable {
@@ -35,18 +35,18 @@ contract AFGToken is ERC20, Ownable, Pausable {
     /// @notice Only this address can call mint() — set to RewardDistributor
     address public minter;
 
-    /// @notice DEX pair addresses subject to tax
-    mapping(address => bool) public isDexPair;
+    /// @notice Addresses exempt from transfer tax (protocol contracts, treasury, etc.)
+    mapping(address => bool) public isTaxExempt;
 
-    /// @notice DEX tax rate in basis points (default 300 = 3%, max 1000 = 10%)
-    uint256 public dexTaxBps = 300;
+    /// @notice Transfer tax rate in basis points (default 300 = 3%, max 1000 = 10%)
+    uint256 public taxBps = 300;
 
-    /// @notice Maximum allowed DEX tax rate (10%)
-    uint256 public constant MAX_DEX_TAX_BPS = 1000;
+    /// @notice Maximum allowed tax rate (10%)
+    uint256 public constant MAX_TAX_BPS = 1000;
 
     event MinterSet(address indexed minter);
-    event DexPairSet(address indexed pair, bool enabled);
-    event DexTaxBpsUpdated(uint256 newBps);
+    event TaxExemptSet(address indexed account, bool exempt);
+    event TaxBpsUpdated(uint256 newBps);
 
     error OnlyMinter();
     error ExceedsMiningPool();
@@ -68,6 +68,10 @@ contract AFGToken is ERC20, Ownable, Pausable {
         // Pre-mint 10M to treasury
         _mint(_treasury, TREASURY_PREMINT);
 
+        // Treasury and deployer are tax-exempt by default
+        isTaxExempt[_treasury] = true;
+        isTaxExempt[msg.sender] = true;
+
         // Start paused
         _pause();
     }
@@ -80,16 +84,16 @@ contract AFGToken is ERC20, Ownable, Pausable {
         emit MinterSet(_minter);
     }
 
-    function setDexPair(address pair, bool enabled) external onlyOwner {
-        if (pair == address(0)) revert ZeroAddress();
-        isDexPair[pair] = enabled;
-        emit DexPairSet(pair, enabled);
+    function setTaxExempt(address account, bool exempt) external onlyOwner {
+        if (account == address(0)) revert ZeroAddress();
+        isTaxExempt[account] = exempt;
+        emit TaxExemptSet(account, exempt);
     }
 
-    function setDexTaxBps(uint256 _bps) external onlyOwner {
-        if (_bps > MAX_DEX_TAX_BPS) revert TaxTooHigh();
-        dexTaxBps = _bps;
-        emit DexTaxBpsUpdated(_bps);
+    function setTaxBps(uint256 _bps) external onlyOwner {
+        if (_bps > MAX_TAX_BPS) revert TaxTooHigh();
+        taxBps = _bps;
+        emit TaxBpsUpdated(_bps);
     }
 
     function pause() external onlyOwner {
@@ -126,20 +130,20 @@ contract AFGToken is ERC20, Ownable, Pausable {
         return INITIAL_REWARD_PER_ROUND >> halvingCount;
     }
 
-    // ============ DEX Tax ============
+    // ============ Transfer Tax ============
 
     /**
-     * @notice Override _update to apply DEX tax on DEX pair transfers
+     * @notice Override _update to apply transfer tax on all non-exempt transfers
      */
     function _update(
         address from,
         address to,
         uint256 value
     ) internal virtual override {
-        // Apply DEX tax if transferring to/from a registered pair
+        // Apply tax unless sender or receiver is exempt (or mint/burn)
         if (value > 0 && from != address(0) && to != address(0)) {
-            if (isDexPair[from] || isDexPair[to]) {
-                uint256 tax = (value * dexTaxBps) / 10000;
+            if (!isTaxExempt[from] && !isTaxExempt[to]) {
+                uint256 tax = (value * taxBps) / 10000;
                 uint256 netAmount = value - tax;
 
                 // Send tax to treasury

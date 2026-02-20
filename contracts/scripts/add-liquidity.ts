@@ -1,7 +1,7 @@
 /**
  * Add Liquidity Script
  *
- * Adds AFG/BNB liquidity to PancakeSwap V2, then registers the pair for DEX tax.
+ * Adds AFG/BNB liquidity to PancakeSwap V2.
  *
  * Usage:
  *   npx hardhat run scripts/add-liquidity.ts --network bscTestnet
@@ -16,10 +16,9 @@
  *   1. Approve PancakeSwap Router to spend AFG
  *   2. Call addLiquidityETH() with AFG + BNB
  *   3. Get LP pair address from PancakeSwap Factory
- *   4. Call AFGToken.setDexPair(pair, true) to enable DEX tax
  *
- * NOTE: Add liquidity BEFORE registering the pair, otherwise the initial
- *       deposit will be taxed.
+ * NOTE: The deployer/treasury is tax-exempt by default, so adding liquidity
+ *       won't be taxed. All non-exempt transfers are taxed automatically.
  */
 
 import 'dotenv/config'
@@ -77,11 +76,6 @@ const ROUTER_ABI = [
 
 const FACTORY_ABI = [
   { type: 'function', name: 'getPair', inputs: [{ name: 'tokenA', type: 'address' }, { name: 'tokenB', type: 'address' }], outputs: [{ type: 'address' }], stateMutability: 'view' },
-] as const
-
-const AFG_ADMIN_ABI = [
-  { type: 'function', name: 'setDexPair', inputs: [{ name: 'pair', type: 'address' }, { name: 'enabled', type: 'bool' }], outputs: [], stateMutability: 'nonpayable' },
-  { type: 'function', name: 'isDexPair', inputs: [{ name: '', type: 'address' }], outputs: [{ type: 'bool' }], stateMutability: 'view' },
 ] as const
 
 async function main() {
@@ -230,29 +224,10 @@ async function main() {
     process.exit(1)
   }
 
-  // Step 4: Register pair for DEX tax
-  console.log('\nStep 4: Registering pair for DEX tax...')
-  const setDexHash = await walletClient.writeContract({
-    address: afgAddress,
-    abi: AFG_ADMIN_ABI,
-    functionName: 'setDexPair',
-    args: [pairAddress, true],
-  })
-  const setDexReceipt = await publicClient.waitForTransactionReceipt({ hash: setDexHash })
-  console.log(`  TX: ${setDexHash} (status: ${setDexReceipt.status})`)
-
-  // Verify
-  const isRegistered = await publicClient.readContract({
-    address: afgAddress,
-    abi: AFG_ADMIN_ABI,
-    functionName: 'isDexPair',
-    args: [pairAddress],
-  })
-  console.log(`  Pair registered: ${isRegistered}`)
-
   console.log('\n' + '='.repeat(60))
-  console.log('  Done! Liquidity added and DEX tax enabled.')
+  console.log('  Done! Liquidity added successfully.')
   console.log(`  LP Pair: ${pairAddress}`)
+  console.log('  All non-exempt transfers are taxed automatically.')
   console.log('='.repeat(60))
 }
 

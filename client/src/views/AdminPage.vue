@@ -35,7 +35,7 @@ const {
   contractStates,
   currentMintPrice,
   contractBalance,
-  currentDexTaxBps,
+  currentTaxBps,
   currentDevWallet,
   checkOwner,
   fetchContractStates,
@@ -43,10 +43,10 @@ const {
   togglePause,
   setMintPrice,
   withdrawFees,
-  setDexTaxBps,
+  setTaxBps,
   setDevWallet,
-  checkDexPair,
-  setDexPair,
+  checkTaxExempt,
+  setTaxExempt,
 } = useAdmin()
 
 const isInitializing = ref(true)
@@ -54,11 +54,11 @@ const processingAction = ref<string | null>(null)
 
 // Form inputs
 const mintPriceInput = ref('')
-const dexTaxInput = ref('')
+const taxBpsInput = ref('')
 const devWalletInput = ref('')
-const dexPairInput = ref('')
-const dexPairStatus = ref<boolean | null>(null)
-const dexPairChecked = ref(false)
+const exemptInput = ref('')
+const exemptStatus = ref<boolean | null>(null)
+const exemptChecked = ref(false)
 
 const contractNames: (keyof ContractStates)[] = ['AFGToken', 'AgentNFA', 'ProblemManager', 'RewardDistributor']
 
@@ -68,7 +68,7 @@ async function init() {
   if (owner) {
     await Promise.all([fetchContractStates(), fetchAdminData()])
     mintPriceInput.value = currentMintPrice.value
-    dexTaxInput.value = String(currentDexTaxBps.value)
+    taxBpsInput.value = String(currentTaxBps.value)
     devWalletInput.value = currentDevWallet.value
   }
   isInitializing.value = false
@@ -104,12 +104,12 @@ async function handleWithdraw() {
   processingAction.value = null
 }
 
-async function handleSetDexTax() {
-  const bps = parseInt(dexTaxInput.value)
+async function handleSetTaxBps() {
+  const bps = parseInt(taxBpsInput.value)
   if (isNaN(bps) || bps < 0 || bps > 1000) return
-  processingAction.value = 'dexTax'
-  await setDexTaxBps(bps)
-  dexTaxInput.value = String(currentDexTaxBps.value)
+  processingAction.value = 'taxBps'
+  await setTaxBps(bps)
+  taxBpsInput.value = String(currentTaxBps.value)
   processingAction.value = null
 }
 
@@ -121,20 +121,20 @@ async function handleSetDevWallet() {
   processingAction.value = null
 }
 
-async function handleCheckDexPair() {
-  if (!dexPairInput.value) return
-  processingAction.value = 'checkPair'
-  dexPairStatus.value = await checkDexPair(dexPairInput.value as Address)
-  dexPairChecked.value = true
+async function handleCheckExempt() {
+  if (!exemptInput.value) return
+  processingAction.value = 'checkExempt'
+  exemptStatus.value = await checkTaxExempt(exemptInput.value as Address)
+  exemptChecked.value = true
   processingAction.value = null
 }
 
-async function handleSetDexPair(enabled: boolean) {
-  if (!dexPairInput.value) return
-  processingAction.value = enabled ? 'enablePair' : 'disablePair'
-  const ok = await setDexPair(dexPairInput.value as Address, enabled)
+async function handleSetExempt(exempt: boolean) {
+  if (!exemptInput.value) return
+  processingAction.value = exempt ? 'addExempt' : 'removeExempt'
+  const ok = await setTaxExempt(exemptInput.value as Address, exempt)
   if (ok) {
-    dexPairStatus.value = enabled
+    exemptStatus.value = exempt
   }
   processingAction.value = null
 }
@@ -271,10 +271,10 @@ async function handleSetDexPair(enabled: boolean) {
         <span class="rpg-box-title">{{ t('admin.afgTokenSettings') }}</span>
 
         <div class="flex items-center justify-between gap-3 text-[9px] mt-2">
-          <span class="text-[var(--color-text-secondary)] shrink-0">{{ t('admin.dexTax') }}</span>
+          <span class="text-[var(--color-text-secondary)] shrink-0">{{ t('admin.taxRate') }}</span>
           <div class="flex items-center gap-2">
             <input
-              v-model="dexTaxInput"
+              v-model="taxBpsInput"
               type="number"
               min="0"
               max="1000"
@@ -282,60 +282,60 @@ async function handleSetDexPair(enabled: boolean) {
             />
             <span class="text-[var(--color-text-secondary)]">{{ t('admin.bps') }}</span>
             <button
-              @click="handleSetDexTax"
+              @click="handleSetTaxBps"
               :disabled="processingAction !== null"
               class="rpg-btn !text-[8px] !px-3 !py-1"
             >
-              {{ processingAction === 'dexTax' ? t('admin.processing') : t('admin.set') }}
+              {{ processingAction === 'taxBps' ? t('admin.processing') : t('admin.set') }}
             </button>
           </div>
         </div>
       </div>
 
-      <!-- DEX Pair Settings -->
+      <!-- Tax Exempt Settings -->
       <div class="rpg-box relative space-y-4">
-        <span class="rpg-box-title">{{ t('admin.dexPairSettings') }}</span>
+        <span class="rpg-box-title">{{ t('admin.taxExemptSettings') }}</span>
 
         <div class="flex items-center gap-2 text-[9px] mt-2">
           <input
-            v-model="dexPairInput"
+            v-model="exemptInput"
             type="text"
-            :placeholder="t('admin.dexPairPlaceholder')"
+            :placeholder="t('admin.exemptPlaceholder')"
             class="rpg-input flex-1 text-[8px]"
-            @input="dexPairChecked = false"
+            @input="exemptChecked = false"
           />
           <button
-            @click="handleCheckDexPair"
-            :disabled="processingAction !== null || !dexPairInput"
+            @click="handleCheckExempt"
+            :disabled="processingAction !== null || !exemptInput"
             class="rpg-btn !text-[8px] !px-3 !py-1"
           >
-            {{ processingAction === 'checkPair' ? t('admin.processing') : t('admin.check') }}
+            {{ processingAction === 'checkExempt' ? t('admin.processing') : t('admin.check') }}
           </button>
         </div>
 
-        <div v-if="dexPairChecked" class="flex items-center justify-between text-[9px]">
+        <div v-if="exemptChecked" class="flex items-center justify-between text-[9px]">
           <div class="flex items-center gap-2">
             <span class="text-[var(--color-text-secondary)]">{{ t('admin.status') }}:</span>
-            <span :class="dexPairStatus ? 'text-[var(--color-xp)]' : 'text-[var(--color-text-secondary)]'">
-              {{ dexPairStatus ? t('admin.taxEnabled') : t('admin.taxDisabled') }}
+            <span :class="exemptStatus ? 'text-[var(--color-xp)]' : 'text-[var(--color-text-secondary)]'">
+              {{ exemptStatus ? t('admin.exempt') : t('admin.taxed') }}
             </span>
           </div>
           <div class="flex items-center gap-2">
             <button
-              v-if="!dexPairStatus"
-              @click="handleSetDexPair(true)"
+              v-if="!exemptStatus"
+              @click="handleSetExempt(true)"
               :disabled="processingAction !== null"
               class="rpg-btn !text-[8px] !px-3 !py-1"
             >
-              {{ processingAction === 'enablePair' ? t('admin.processing') : t('admin.enableTax') }}
+              {{ processingAction === 'addExempt' ? t('admin.processing') : t('admin.addExempt') }}
             </button>
             <button
               v-else
-              @click="handleSetDexPair(false)"
+              @click="handleSetExempt(false)"
               :disabled="processingAction !== null"
               class="rpg-btn !text-[8px] !px-3 !py-1 !border-[var(--color-hp)]"
             >
-              {{ processingAction === 'disablePair' ? t('admin.processing') : t('admin.disableTax') }}
+              {{ processingAction === 'removeExempt' ? t('admin.processing') : t('admin.removeExempt') }}
             </button>
           </div>
         </div>
