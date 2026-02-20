@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./AFGToken.sol";
 import "./AgentNFA.sol";
@@ -18,7 +19,7 @@ import "./ProblemManager.sol";
  *   Slash: 10% of stake for dishonest votes
  *   Oracle fallback: if < 3 verifiers vote, oracle resolves
  */
-contract VerifierElection is Ownable, ReentrancyGuard {
+contract VerifierElection is Ownable, Pausable, ReentrancyGuard {
 
     // ============ Constants ============
 
@@ -71,6 +72,9 @@ contract VerifierElection is Ownable, ReentrancyGuard {
     /// @notice problemId => tokenId => is elected for this problem
     mapping(uint256 => mapping(uint256 => bool)) public isElected;
 
+    /// @notice tokenId => count of active (unresolved) verifications [H-03]
+    mapping(uint256 => uint256) public activeVerificationCount;
+
     // ============ Events ============
 
     event VerifierStaked(uint256 indexed tokenId, uint256 amount);
@@ -118,6 +122,9 @@ contract VerifierElection is Ownable, ReentrancyGuard {
         problemManager = ProblemManager(_pm);
     }
 
+    function pause() external onlyOwner { _pause(); }
+    function unpause() external onlyOwner { _unpause(); }
+
     // ============ Staking ============
 
     /**
@@ -125,7 +132,7 @@ contract VerifierElection is Ownable, ReentrancyGuard {
      * @param tokenId The NFA to register as verifier
      * @param amount Amount of AFG to stake (must be >= MIN_STAKE)
      */
-    function stake(uint256 tokenId, uint256 amount) external nonReentrant {
+    function stake(uint256 tokenId, uint256 amount) external nonReentrant whenNotPaused {
         if (agentNFA.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
         if (agentNFA.getLevel(tokenId) < MIN_VERIFIER_LEVEL) revert LevelTooLow();
         if (amount < MIN_STAKE) revert InsufficientStake();
@@ -154,6 +161,7 @@ contract VerifierElection is Ownable, ReentrancyGuard {
     function unstake(uint256 tokenId) external nonReentrant {
         if (agentNFA.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
         if (!isInPool[tokenId]) revert NotStaked();
+        if (activeVerificationCount[tokenId] > 0) revert CannotUnstakeDuringVerification();
 
         VerifierInfo storage v = verifiers[tokenId];
         uint256 amount = v.stakedAmount;
@@ -185,7 +193,7 @@ contract VerifierElection is Ownable, ReentrancyGuard {
      * @notice Elect verifiers for a problem. Called when reveal phase ends.
      * @dev Uses blockhash + prevrandao for randomness. Non-participants only.
      */
-    function electVerifiers(uint256 problemId) external {
+    function electVerifiers(uint256 problemId) external whenNotPaused {
         ProblemManager.Problem memory prob = problemManager.getProblem(problemId);
         // Can only elect during/after reveal phase
         if (block.timestamp <= prob.submitDeadline) revert NotInVerifyPhase();
@@ -234,6 +242,7 @@ contract VerifierElection is Ownable, ReentrancyGuard {
 
             pv.electedVerifiers.push(eligible[i]);
             isElected[problemId][eligible[i]] = true;
+            activeVerificationCount[eligible[i]]++;
         }
 
         emit VerifiersElected(problemId, pv.electedVerifiers);
@@ -245,7 +254,7 @@ contract VerifierElection is Ownable, ReentrancyGuard {
      * @notice Verifier commits their answer hash
      * @param commitHash keccak256(abi.encodePacked(answerHash, salt))
      */
-    function commitVote(uint256 problemId, uint256 tokenId, bytes32 commitHash) external {
+    function commitVote(uint256 problemId, uint256 tokenId, bytes32 commitHash) external whenNotPaused {
         if (agentNFA.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
         if (!isElected[problemId][tokenId]) revert NotElected();
 
@@ -310,6 +319,7 @@ contract VerifierElection is Ownable, ReentrancyGuard {
             ProblemManager.Problem memory prob = problemManager.getProblem(problemId);
             if (block.timestamp > prob.verifyDeadline) {
                 pv.resolved = true;
+                _releaseVerifiers(pv);
                 emit OracleFallbackTriggered(problemId);
                 return;
             }
@@ -361,6 +371,7 @@ contract VerifierElection is Ownable, ReentrancyGuard {
             ProblemManager.Problem memory prob = problemManager.getProblem(problemId);
             if (block.timestamp > prob.verifyDeadline) {
                 pv.resolved = true;
+                _releaseVerifiers(pv);
                 emit OracleFallbackTriggered(problemId);
                 return;
             }
@@ -395,10 +406,22 @@ contract VerifierElection is Ownable, ReentrancyGuard {
             }
         }
 
+        _releaseVerifiers(pv);
+
         emit ConsensusReached(problemId, winningAnswer, maxVotes);
 
         // Resolve the problem in ProblemManager
         problemManager.resolveByVerifiers(problemId, winningAnswer);
+    }
+
+    /// @dev Decrement activeVerificationCount for all elected verifiers [H-03]
+    function _releaseVerifiers(ProblemVerification storage pv) internal {
+        for (uint256 i = 0; i < pv.electedVerifiers.length; i++) {
+            uint256 tid = pv.electedVerifiers[i];
+            if (activeVerificationCount[tid] > 0) {
+                activeVerificationCount[tid]--;
+            }
+        }
     }
 
     // ============ View Functions ============

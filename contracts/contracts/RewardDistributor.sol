@@ -90,6 +90,7 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     error ProblemNotResolved();
     error OnlyOracle();
     error TransferFailed();
+    error InvalidWinner();
 
     // ============ Constructor ============
 
@@ -114,6 +115,7 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     // ============ Admin ============
 
     function setVerifierElection(address _ve) external onlyOwner {
+        if (_ve == address(0)) revert ZeroAddress();
         verifierElection = VerifierElection(_ve);
     }
 
@@ -147,6 +149,11 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
 
         ProblemManager.Problem memory prob = problemManager.getProblem(problemId);
         if (!prob.resolved) revert ProblemNotResolved();
+
+        // Validate all winner tokenIds against ProblemManager [H-02 fix]
+        _validateWinners(problemId, bronzeWinners);
+        _validateWinners(problemId, silverWinners);
+        _validateWinners(problemId, goldWinners);
 
         problemRewarded[problemId] = true;
 
@@ -240,29 +247,50 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
         uint256 prizePool = pool - devFee - verifierFee;
         uint256 winnerCount = winnerTokenIds.length;
 
-        // 1st place bonus: 20% of prize pool (extra on top of equal share)
+        // 1st place bonus: 20% of prize pool
         uint256 firstBonus = (prizePool * FIRST_BONUS_BPS) / (FIRST_BONUS_BPS + ALL_CORRECT_BPS);
-        uint256 firstBonusWithInt = firstBonus + _intBonus(firstBonus, winnerTokenIds[0]);
 
-        address firstOwner = agentNFA.ownerOf(winnerTokenIds[0]);
-        pendingRewards[firstOwner] += firstBonusWithInt;
-        afgToken.mint(address(this), firstBonusWithInt);
-
-        // Equal share: 70% split among ALL correct answers (including 1st)
+        // Equal share pool: 70%, distributed weighted by INT [M-01 fix]
         uint256 equalPool = prizePool - firstBonus;
-        uint256 perWinner = equalPool / winnerCount;
 
+        // Calculate INT-weighted shares (bonus comes from within pool, no extra minting)
+        uint256 totalWeight = 0;
+        uint256[] memory weights = new uint256[](winnerCount);
         for (uint256 i = 0; i < winnerCount; i++) {
-            uint256 share = perWinner + _intBonus(perWinner, winnerTokenIds[i]);
+            weights[i] = 10000 + _intBonusBps(winnerTokenIds[i]);
+            totalWeight += weights[i];
+        }
 
+        // Mint entire prize pool to this contract in one call
+        afgToken.mint(address(this), prizePool);
+
+        // Distribute first bonus
+        address firstOwner = agentNFA.ownerOf(winnerTokenIds[0]);
+        pendingRewards[firstOwner] += firstBonus;
+
+        // Distribute equal pool weighted by INT
+        for (uint256 i = 0; i < winnerCount; i++) {
+            uint256 share = (equalPool * weights[i]) / totalWeight;
             address winnerOwner = agentNFA.ownerOf(winnerTokenIds[i]);
             pendingRewards[winnerOwner] += share;
-            afgToken.mint(address(this), share);
 
             bool isFirst = (i == 0);
             uint64 xpAmount = _applyIntBonusXP(_getXPForTier(tier, isFirst), winnerTokenIds[i]);
             agentNFA.grantXP(winnerTokenIds[i], xpAmount);
             agentNFA.recordSolve(winnerTokenIds[i]);
+        }
+    }
+
+    /// @dev Validate that all provided tokenIds are in ProblemManager's winners list [H-02]
+    function _validateWinners(uint256 problemId, uint256[] calldata tokenIds) internal view {
+        if (tokenIds.length == 0) return;
+        uint256[] memory pmWinners = problemManager.getWinners(problemId);
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            bool found = false;
+            for (uint256 j = 0; j < pmWinners.length; j++) {
+                if (tokenIds[i] == pmWinners[j]) { found = true; break; }
+            }
+            if (!found) revert InvalidWinner();
         }
     }
 
@@ -272,15 +300,13 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
         return isFirst ? GOLD_XP_MAX : GOLD_XP_MIN;
     }
 
-    function _intBonus(uint256 baseAmount, uint256 tokenId) internal view returns (uint256) {
+    function _intBonusBps(uint256 tokenId) internal view returns (uint256) {
         AgentNFA.AgentTraits memory t = agentNFA.getTraits(tokenId);
-        uint256 bonusBps = uint256(t.intelligence - INT_BASE) * INT_BONUS_PER_POINT;
-        return (baseAmount * bonusBps) / 10000;
+        return uint256(t.intelligence - INT_BASE) * INT_BONUS_PER_POINT;
     }
 
     function _applyIntBonusXP(uint64 baseXP, uint256 tokenId) internal view returns (uint64) {
-        AgentNFA.AgentTraits memory t = agentNFA.getTraits(tokenId);
-        uint256 bonusBps = uint256(t.intelligence - INT_BASE) * INT_BONUS_PER_POINT;
+        uint256 bonusBps = _intBonusBps(tokenId);
         return uint64(uint256(baseXP) + (uint256(baseXP) * bonusBps) / 10000);
     }
 }

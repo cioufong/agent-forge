@@ -249,6 +249,11 @@ contract ProblemManager is Ownable, Pausable {
         // The VerifierElection contract will be authorized via setResolver
         if (msg.sender != resolver && msg.sender != oracle) revert OnlyOracle();
 
+        // Verifier resolution only valid after reveal phase [M-03 fix]
+        Problem storage p = problems[problemId];
+        if (p.createdAt == 0) revert ProblemNotFound();
+        if (block.timestamp <= p.revealDeadline) revert NotInVerifyPhase();
+
         _resolve(problemId, correctAnswerHash, false);
     }
 
@@ -329,6 +334,7 @@ contract ProblemManager is Ownable, Pausable {
     address public resolver;
 
     function setResolver(address _resolver) external onlyOwner {
+        if (_resolver == address(0)) revert ZeroAddress();
         resolver = _resolver;
     }
 

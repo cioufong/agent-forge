@@ -63,6 +63,9 @@ contract AFGToken is ERC20, Ownable, Pausable {
     /// @notice Maximum allowed swap threshold
     uint256 public constant MAX_SWAP_THRESHOLD = 1_000_000 ether;
 
+    /// @notice Minimum allowed swap threshold
+    uint256 public constant MIN_SWAP_THRESHOLD = 100 ether;
+
     /// @notice Whether auto-swap is enabled
     bool public swapEnabled = true;
 
@@ -83,6 +86,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
     error ZeroAddress();
     error TaxTooHigh();
     error SwapThresholdTooHigh();
+    error SwapThresholdTooLow();
 
     modifier onlyMinter() {
         if (msg.sender != minter) revert OnlyMinter();
@@ -136,6 +140,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
 
     function setSwapThreshold(uint256 _threshold) external onlyOwner {
         if (_threshold > MAX_SWAP_THRESHOLD) revert SwapThresholdTooHigh();
+        if (_threshold < MIN_SWAP_THRESHOLD) revert SwapThresholdTooLow();
         swapThreshold = _threshold;
         emit SwapThresholdUpdated(_threshold);
     }

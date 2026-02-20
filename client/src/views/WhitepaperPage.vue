@@ -259,23 +259,66 @@ onMounted(() => {
           <div><span class="text-[var(--color-text-secondary)]">{{ t('codex.tokenomics.dexTax') }}</span> <span>{{ t('codex.tokenomics.dexTaxValue') }}</span></div>
         </div>
 
+        <!-- Distribution -->
+        <h3 class="text-[var(--color-primary)] mt-4">{{ t('codex.tokenomics.distribution') }}</h3>
+        <div class="space-y-3 mt-2">
+          <!-- Mining 90% -->
+          <div>
+            <div class="flex items-center justify-between text-[9px] mb-1">
+              <span class="text-[var(--color-xp)]">{{ t('codex.tokenomics.mining') }}</span>
+              <span class="text-[var(--color-xp)]">90,000,000</span>
+            </div>
+            <div class="pixel-bar">
+              <div v-for="i in 10" :key="i" :class="['pixel-bar-segment flex-1', i <= 9 ? 'bg-[var(--color-xp)]' : 'bg-[var(--color-border)]']" />
+            </div>
+            <p class="text-[8px] text-[var(--color-text-secondary)] mt-1">{{ t('codex.tokenomics.miningDesc') }}</p>
+          </div>
+          <!-- Dev 5% -->
+          <div>
+            <div class="flex items-center justify-between text-[9px] mb-1">
+              <span class="text-[var(--color-mp)]">{{ t('codex.tokenomics.dev') }}</span>
+              <span class="text-[var(--color-mp)]">5,000,000</span>
+            </div>
+            <div class="pixel-bar">
+              <div v-for="i in 20" :key="i" :class="['pixel-bar-segment flex-1', i <= 1 ? 'bg-[var(--color-mp)]' : 'bg-[var(--color-border)]']" />
+            </div>
+            <p class="text-[8px] text-[var(--color-text-secondary)] mt-1">{{ t('codex.tokenomics.devDesc') }}</p>
+          </div>
+          <!-- Liquidity 5% -->
+          <div>
+            <div class="flex items-center justify-between text-[9px] mb-1">
+              <span class="text-[var(--color-primary)]">{{ t('codex.tokenomics.liquidity') }}</span>
+              <span class="text-[var(--color-primary)]">5,000,000</span>
+            </div>
+            <div class="pixel-bar">
+              <div v-for="i in 20" :key="i" :class="['pixel-bar-segment flex-1', i <= 1 ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]']" />
+            </div>
+            <p class="text-[8px] text-[var(--color-text-secondary)] mt-1">{{ t('codex.tokenomics.liquidityDesc') }}</p>
+          </div>
+        </div>
+
+        <!-- Token Flow -->
         <h3 class="text-[var(--color-primary)] mt-4">{{ t('codex.tokenomics.tokenFlow') }}</h3>
         <div class="space-y-2 text-[9px] mt-2">
           <div class="py-1 border-b border-[var(--color-bg)]">
-            <span class="text-[var(--color-xp)]">Mining:</span>
-            <span class="text-[var(--color-text-secondary)]"> {{ t('codex.tokenomics.mining') }}</span>
+            <span class="text-[var(--color-xp)]">&triangleright;</span>
+            <span class="text-[var(--color-text-secondary)]"> {{ t('codex.tokenomics.flowMining') }}</span>
           </div>
           <div class="py-1 border-b border-[var(--color-bg)]">
-            <span class="text-[var(--color-mp)]">Staking:</span>
-            <span class="text-[var(--color-text-secondary)]"> {{ t('codex.tokenomics.staking') }}</span>
+            <span class="text-[var(--color-mp)]">&triangleright;</span>
+            <span class="text-[var(--color-text-secondary)]"> {{ t('codex.tokenomics.flowStaking') }}</span>
           </div>
           <div class="py-1 border-b border-[var(--color-bg)]">
-            <span class="text-[var(--color-hp)]">Slashing:</span>
-            <span class="text-[var(--color-text-secondary)]"> {{ t('codex.tokenomics.slashing') }}</span>
+            <span class="text-[var(--color-hp)]">&triangleright;</span>
+            <span class="text-[var(--color-text-secondary)]"> {{ t('codex.tokenomics.flowSlashing') }}</span>
+          </div>
+          <div class="py-1 border-b border-[var(--color-bg)]">
+            <span class="text-[var(--color-gold)]">&triangleright;</span>
+            <span class="text-[var(--color-text-secondary)]"> {{ t('codex.tokenomics.flowTax') }}</span>
           </div>
           <div class="py-1">
-            <span class="text-[var(--color-primary)]">Halving:</span>
-            <span class="text-[var(--color-text-secondary)]"> {{ t('codex.tokenomics.halving') }}</span>
+            <span class="text-[var(--color-primary)]">&triangleright;</span>
+            <span class="text-[var(--color-text-secondary)]"> {{ t('codex.tokenomics.flowHalving') }}</span>
           </div>
         </div>
       </section>
