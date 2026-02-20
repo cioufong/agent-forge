@@ -38,6 +38,9 @@ export function useAdmin() {
   const contractBalance = ref<string>('0')
   const currentTaxBps = ref<number>(0)
   const currentDevWallet = ref<string>('')
+  const currentSwapThreshold = ref<string>('0')
+  const currentSwapEnabled = ref<boolean>(true)
+  const currentRouterAddress = ref<string>('')
 
   async function checkOwner(): Promise<boolean> {
     if (!account.value) {
@@ -100,12 +103,30 @@ export function useAdmin() {
         abi: REWARD_DISTRIBUTOR_ABI,
         functionName: 'devWallet',
       }),
+      client.readContract({
+        address: getContractAddress('AFGToken'),
+        abi: AFG_TOKEN_ABI,
+        functionName: 'swapThreshold',
+      }),
+      client.readContract({
+        address: getContractAddress('AFGToken'),
+        abi: AFG_TOKEN_ABI,
+        functionName: 'swapEnabled',
+      }),
+      client.readContract({
+        address: getContractAddress('AFGToken'),
+        abi: AFG_TOKEN_ABI,
+        functionName: 'router',
+      }),
     ])
 
     if (results[0].status === 'fulfilled') currentMintPrice.value = formatEther(results[0].value as bigint)
     if (results[1].status === 'fulfilled') contractBalance.value = formatEther(results[1].value as bigint)
     if (results[2].status === 'fulfilled') currentTaxBps.value = Number(results[2].value)
     if (results[3].status === 'fulfilled') currentDevWallet.value = results[3].value as string
+    if (results[4].status === 'fulfilled') currentSwapThreshold.value = formatEther(results[4].value as bigint)
+    if (results[5].status === 'fulfilled') currentSwapEnabled.value = results[5].value as boolean
+    if (results[6].status === 'fulfilled') currentRouterAddress.value = results[6].value as string
   }
 
   async function togglePause(contract: ContractName, currentPaused: boolean): Promise<boolean> {
@@ -226,6 +247,54 @@ export function useAdmin() {
     }
   }
 
+  async function setSwapThreshold(thresholdInEther: string): Promise<boolean> {
+    const wallet = getWalletClient()
+    if (!wallet || !account.value) return false
+
+    error.value = null
+    try {
+      const client = getPublicClient()
+      const hash = await wallet.writeContract({
+        address: getContractAddress('AFGToken'),
+        abi: AFG_TOKEN_ABI,
+        functionName: 'setSwapThreshold',
+        args: [parseEther(thresholdInEther)],
+        chain: TARGET_CHAIN,
+        account: account.value,
+      })
+      await client.waitForTransactionReceipt({ hash })
+      await fetchAdminData()
+      return true
+    } catch (err: any) {
+      error.value = err.message
+      return false
+    }
+  }
+
+  async function setSwapEnabled(enabled: boolean): Promise<boolean> {
+    const wallet = getWalletClient()
+    if (!wallet || !account.value) return false
+
+    error.value = null
+    try {
+      const client = getPublicClient()
+      const hash = await wallet.writeContract({
+        address: getContractAddress('AFGToken'),
+        abi: AFG_TOKEN_ABI,
+        functionName: 'setSwapEnabled',
+        args: [enabled],
+        chain: TARGET_CHAIN,
+        account: account.value,
+      })
+      await client.waitForTransactionReceipt({ hash })
+      await fetchAdminData()
+      return true
+    } catch (err: any) {
+      error.value = err.message
+      return false
+    }
+  }
+
   async function checkTaxExempt(addr: Address): Promise<boolean | null> {
     try {
       const client = getPublicClient()
@@ -272,6 +341,9 @@ export function useAdmin() {
     contractBalance,
     currentTaxBps,
     currentDevWallet,
+    currentSwapThreshold,
+    currentSwapEnabled,
+    currentRouterAddress,
     checkOwner,
     fetchContractStates,
     fetchAdminData,
@@ -280,6 +352,8 @@ export function useAdmin() {
     withdrawFees,
     setTaxBps,
     setDevWallet,
+    setSwapThreshold,
+    setSwapEnabled,
     checkTaxExempt,
     setTaxExempt,
   }

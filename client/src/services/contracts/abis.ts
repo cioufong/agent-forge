@@ -20,6 +20,16 @@ export const AFG_TOKEN_ABI = [
   { type: 'function', name: 'setTaxBps', inputs: [{ name: '_bps', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
   { type: 'function', name: 'setTaxExempt', inputs: [{ name: 'account', type: 'address' }, { name: 'exempt', type: 'bool' }], outputs: [], stateMutability: 'nonpayable' },
   { type: 'function', name: 'isTaxExempt', inputs: [{ name: '', type: 'address' }], outputs: [{ type: 'bool' }], stateMutability: 'view' },
+  // Auto-Swap
+  { type: 'function', name: 'router', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' },
+  { type: 'function', name: 'swapThreshold', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'swapEnabled', inputs: [], outputs: [{ type: 'bool' }], stateMutability: 'view' },
+  { type: 'function', name: 'setSwapThreshold', inputs: [{ name: '_threshold', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'setSwapEnabled', inputs: [{ name: '_enabled', type: 'bool' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'event', name: 'TaxSwapped', inputs: [
+    { name: 'afgAmount', type: 'uint256', indexed: false },
+    { name: 'bnbAmount', type: 'uint256', indexed: false },
+  ]},
 ] as const
 
 export const AGENT_NFA_ABI = [

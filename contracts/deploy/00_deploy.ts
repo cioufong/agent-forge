@@ -17,13 +17,24 @@ export default deployScript(
     const devWallet = process.env.DEV_WALLET || deployer;
     const mintPrice = process.env.MINT_PRICE || parseEther('0.01').toString();
 
+    // PancakeSwap V2 Router addresses by chain
+    const ROUTER_BY_CHAIN: Record<number, string> = {
+      56: '0x10ED43C718714eb63d5aA57B78B54704E256024E',     // BSC Mainnet
+      97: '0xD99D1c33F9fC3444f8101754aBC46c52416550D1',     // BSC Testnet
+    };
+    // For local/hardhat networks, use a placeholder (swap won't work but deploy succeeds)
+    const routerAddress = ROUTER_BY_CHAIN[chainId] || deployer;
+    if (!ROUTER_BY_CHAIN[chainId]) {
+      console.log('⚠️  No PancakeSwap Router for this chain, using deployer as placeholder');
+    }
+
     // ====================================================
     // 1. AFGToken
     // ====================================================
     const afgToken = await env.deploy('AFGToken', {
       account: deployer,
       artifact: artifacts.AFGToken,
-      args: [treasury],
+      args: [treasury, routerAddress],
     });
     console.log('✅ AFGToken deployed:', afgToken.address);
 

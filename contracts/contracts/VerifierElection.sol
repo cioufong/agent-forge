@@ -109,7 +109,7 @@ contract VerifierElection is Ownable, ReentrancyGuard {
     ) Ownable(msg.sender) {
         if (_afgToken == address(0) || _agentNFA == address(0) || _problemManager == address(0))
             revert ZeroAddress();
-        afgToken = AFGToken(_afgToken);
+        afgToken = AFGToken(payable(_afgToken));
         agentNFA = AgentNFA(_agentNFA);
         problemManager = ProblemManager(_problemManager);
     }

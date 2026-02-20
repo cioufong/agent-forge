@@ -5,6 +5,17 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
+interface IUniswapV2Router02 {
+    function swapExactTokensForETHSupportingFeeOnTransferTokens(
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address[] calldata path,
+        address to,
+        uint256 deadline
+    ) external;
+    function WETH() external pure returns (address);
+}
+
 /**
  * @title AFGToken
  * @notice ERC-20 token for AgentForge protocol
@@ -13,6 +24,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  *   - 90% (90M) released via problem-solving mining
  *   - Configurable transfer tax (default 3%), with exempt addresses for protocol contracts
  *   - Halving schedule based on elapsed time since deployment
+ *   - Auto-swap: accumulated tax AFG → BNB via PancakeSwap when threshold is reached
  */
 contract AFGToken is ERC20, Ownable, Pausable {
     uint256 public constant MAX_SUPPLY = 100_000_000 ether;
@@ -28,6 +40,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
 
     uint256 public immutable deployedAt;
     address public immutable treasury;
+    IUniswapV2Router02 public immutable router;
 
     /// @notice Total AFG minted via mining
     uint256 public totalMined;
@@ -44,14 +57,30 @@ contract AFGToken is ERC20, Ownable, Pausable {
     /// @notice Maximum allowed tax rate (10%)
     uint256 public constant MAX_TAX_BPS = 1000;
 
+    /// @notice Minimum accumulated tax to trigger auto-swap
+    uint256 public swapThreshold = 10_000 ether;
+
+    /// @notice Maximum allowed swap threshold
+    uint256 public constant MAX_SWAP_THRESHOLD = 1_000_000 ether;
+
+    /// @notice Whether auto-swap is enabled
+    bool public swapEnabled = true;
+
+    /// @dev Reentrancy lock for swap operations
+    bool private _swapping;
+
     event MinterSet(address indexed minter);
     event TaxExemptSet(address indexed account, bool exempt);
     event TaxBpsUpdated(uint256 newBps);
+    event SwapThresholdUpdated(uint256 newThreshold);
+    event SwapEnabledUpdated(bool enabled);
+    event TaxSwapped(uint256 afgAmount, uint256 bnbAmount);
 
     error OnlyMinter();
     error ExceedsMiningPool();
     error ZeroAddress();
     error TaxTooHigh();
+    error SwapThresholdTooHigh();
 
     modifier onlyMinter() {
         if (msg.sender != minter) revert OnlyMinter();
@@ -59,18 +88,25 @@ contract AFGToken is ERC20, Ownable, Pausable {
     }
 
     constructor(
-        address _treasury
+        address _treasury,
+        address _router
     ) ERC20("AgentForge", "AFG") Ownable(msg.sender) {
         if (_treasury == address(0)) revert ZeroAddress();
+        if (_router == address(0)) revert ZeroAddress();
         treasury = _treasury;
+        router = IUniswapV2Router02(_router);
         deployedAt = block.timestamp;
 
         // Pre-mint 10M to treasury
         _mint(_treasury, TREASURY_PREMINT);
 
-        // Treasury and deployer are tax-exempt by default
+        // Treasury, deployer, and this contract are tax-exempt by default
         isTaxExempt[_treasury] = true;
         isTaxExempt[msg.sender] = true;
+        isTaxExempt[address(this)] = true;
+
+        // Pre-approve router for max spending (gas optimization)
+        _approve(address(this), _router, type(uint256).max);
 
         // Start paused
         _pause();
@@ -94,6 +130,17 @@ contract AFGToken is ERC20, Ownable, Pausable {
         if (_bps > MAX_TAX_BPS) revert TaxTooHigh();
         taxBps = _bps;
         emit TaxBpsUpdated(_bps);
+    }
+
+    function setSwapThreshold(uint256 _threshold) external onlyOwner {
+        if (_threshold > MAX_SWAP_THRESHOLD) revert SwapThresholdTooHigh();
+        swapThreshold = _threshold;
+        emit SwapThresholdUpdated(_threshold);
+    }
+
+    function setSwapEnabled(bool _enabled) external onlyOwner {
+        swapEnabled = _enabled;
+        emit SwapEnabledUpdated(_enabled);
     }
 
     function pause() external onlyOwner {
@@ -134,6 +181,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
 
     /**
      * @notice Override _update to apply transfer tax on all non-exempt transfers
+     * @dev Tax accumulates in this contract; auto-swaps to BNB when threshold is reached
      */
     function _update(
         address from,
@@ -146,13 +194,42 @@ contract AFGToken is ERC20, Ownable, Pausable {
                 uint256 tax = (value * taxBps) / 10000;
                 uint256 netAmount = value - tax;
 
-                // Send tax to treasury
-                super._update(from, treasury, tax);
+                // Accumulate tax in this contract (instead of sending to treasury)
+                super._update(from, address(this), tax);
                 super._update(from, to, netAmount);
+
+                // Auto-swap if conditions are met
+                if (swapEnabled && !_swapping && balanceOf(address(this)) >= swapThreshold) {
+                    _swapping = true;
+                    _swapAndSendBNB(swapThreshold);
+                    _swapping = false;
+                }
                 return;
             }
         }
 
         super._update(from, to, value);
     }
+
+    /**
+     * @dev Swap accumulated AFG tax to BNB via PancakeSwap and send to treasury
+     */
+    function _swapAndSendBNB(uint256 amount) private {
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = router.WETH();
+
+        router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+            amount,
+            0, // accept any amount of BNB (risk bounded by threshold)
+            path,
+            treasury,
+            block.timestamp
+        );
+
+        emit TaxSwapped(amount, address(treasury).balance);
+    }
+
+    /// @dev Required to receive BNB from router during swap
+    receive() external payable {}
 }

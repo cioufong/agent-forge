@@ -37,6 +37,9 @@ const {
   contractBalance,
   currentTaxBps,
   currentDevWallet,
+  currentSwapThreshold,
+  currentSwapEnabled,
+  currentRouterAddress,
   checkOwner,
   fetchContractStates,
   fetchAdminData,
@@ -45,6 +48,8 @@ const {
   withdrawFees,
   setTaxBps,
   setDevWallet,
+  setSwapThreshold,
+  setSwapEnabled,
   checkTaxExempt,
   setTaxExempt,
 } = useAdmin()
@@ -59,6 +64,7 @@ const devWalletInput = ref('')
 const exemptInput = ref('')
 const exemptStatus = ref<boolean | null>(null)
 const exemptChecked = ref(false)
+const swapThresholdInput = ref('')
 
 const contractNames: (keyof ContractStates)[] = ['AFGToken', 'AgentNFA', 'ProblemManager', 'RewardDistributor']
 
@@ -70,6 +76,7 @@ async function init() {
     mintPriceInput.value = currentMintPrice.value
     taxBpsInput.value = String(currentTaxBps.value)
     devWalletInput.value = currentDevWallet.value
+    swapThresholdInput.value = currentSwapThreshold.value
   }
   isInitializing.value = false
 }
@@ -110,6 +117,20 @@ async function handleSetTaxBps() {
   processingAction.value = 'taxBps'
   await setTaxBps(bps)
   taxBpsInput.value = String(currentTaxBps.value)
+  processingAction.value = null
+}
+
+async function handleSetSwapThreshold() {
+  if (!swapThresholdInput.value) return
+  processingAction.value = 'swapThreshold'
+  await setSwapThreshold(swapThresholdInput.value)
+  swapThresholdInput.value = currentSwapThreshold.value
+  processingAction.value = null
+}
+
+async function handleToggleSwapEnabled() {
+  processingAction.value = 'swapEnabled'
+  await setSwapEnabled(!currentSwapEnabled.value)
   processingAction.value = null
 }
 
@@ -289,6 +310,55 @@ async function handleSetExempt(exempt: boolean) {
               {{ processingAction === 'taxBps' ? t('admin.processing') : t('admin.set') }}
             </button>
           </div>
+        </div>
+
+        <hr class="pixel-divider" />
+
+        <!-- Auto-Swap Settings -->
+        <div class="flex items-center justify-between gap-3 text-[9px]">
+          <span class="text-[var(--color-text-secondary)] shrink-0">Auto-Swap</span>
+          <div class="flex items-center gap-2">
+            <span :class="currentSwapEnabled ? 'text-[var(--color-xp)]' : 'text-[var(--color-hp)]'">
+              {{ currentSwapEnabled ? 'ON' : 'OFF' }}
+            </span>
+            <button
+              @click="handleToggleSwapEnabled"
+              :disabled="processingAction !== null"
+              class="rpg-btn !text-[8px] !px-3 !py-1"
+            >
+              {{ processingAction === 'swapEnabled' ? t('admin.processing') : (currentSwapEnabled ? t('admin.pause') : t('admin.unpause')) }}
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 text-[9px]">
+          <span class="text-[var(--color-text-secondary)] shrink-0">Swap Threshold</span>
+          <div class="flex items-center gap-2">
+            <input
+              v-model="swapThresholdInput"
+              type="text"
+              placeholder="10000"
+              class="rpg-input w-24 text-right"
+            />
+            <span class="text-[var(--color-text-secondary)]">AFG</span>
+            <button
+              @click="handleSetSwapThreshold"
+              :disabled="processingAction !== null"
+              class="rpg-btn !text-[8px] !px-3 !py-1"
+            >
+              {{ processingAction === 'swapThreshold' ? t('admin.processing') : t('admin.set') }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="currentRouterAddress" class="flex items-center justify-between gap-3 text-[9px]">
+          <span class="text-[var(--color-text-secondary)] shrink-0">Router</span>
+          <a
+            :href="`${explorerUrl}/address/${currentRouterAddress}`"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-[var(--color-primary)] hover:underline text-[8px] font-mono"
+          >{{ shortenAddress(currentRouterAddress) }} &nearr;</a>
         </div>
       </div>
 
