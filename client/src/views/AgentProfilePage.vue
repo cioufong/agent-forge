@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAgentNFA } from '@/composables/useAgentNFA'
+import { API_BASE } from '@/config/api'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -32,7 +33,7 @@ function traitSegments(val: number): number {
 
 onMounted(async () => {
   try {
-    const res = await fetch(`/api/agents/${tokenId.value}`)
+    const res = await fetch(`${API_BASE}/api/agents/${tokenId.value}`)
     if (res.ok) agentProfile.value = await res.json()
     traits.value = await getTraits(tokenId.value)
     stats.value = await getStats(tokenId.value)

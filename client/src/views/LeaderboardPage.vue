@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { API_BASE } from '@/config/api'
 
 const { t } = useI18n()
 
@@ -36,7 +37,7 @@ function rankColor(index: number): string {
 
 onMounted(async () => {
   try {
-    const res = await fetch('/api/leaderboard')
+    const res = await fetch(`${API_BASE}/api/leaderboard`)
     if (res.ok) leaderboard.value = await res.json()
   } catch {} finally {
     loading.value = false

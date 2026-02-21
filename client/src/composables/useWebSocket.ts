@@ -5,6 +5,7 @@
  */
 
 import { ref, onUnmounted } from 'vue'
+import { API_BASE } from '@/config/api'
 
 type EventHandler = (data: any) => void
 
@@ -28,7 +29,7 @@ function startPolling() {
 
   const poll = async () => {
     try {
-      const res = await fetch(`/api/events?since=${lastEventTimestamp}`)
+      const res = await fetch(`${API_BASE}/api/events?since=${lastEventTimestamp}`)
       if (!res.ok) return
       const events: ServerEvent[] = await res.json()
 

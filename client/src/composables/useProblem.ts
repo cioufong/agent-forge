@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { API_BASE } from '@/config/api'
 
 export type Phase = 'submit' | 'reveal' | 'verify' | 'resolving' | 'resolved'
 
@@ -19,7 +20,7 @@ export function useProblem() {
 
   async function fetchCurrentProblem(): Promise<void> {
     try {
-      const res = await fetch('/api/problems/current')
+      const res = await fetch(`${API_BASE}/api/problems/current`)
       if (!res.ok) {
         currentProblem.value = null
         return

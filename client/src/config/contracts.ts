@@ -1,4 +1,5 @@
 import type { Address } from 'viem'
+import { API_BASE } from '@/config/api'
 
 interface ContractAddresses {
   AFGToken: Address
@@ -12,7 +13,7 @@ let addresses: ContractAddresses | null = null
 
 export async function initContractAddresses(): Promise<void> {
   try {
-    const res = await fetch('/api/config')
+    const res = await fetch(`${API_BASE}/api/config`)
     const data = await res.json()
     if (data.contracts) {
       addresses = {
