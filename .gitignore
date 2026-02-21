@@ -6,8 +6,6 @@ dist/
 # Hardhat
 contracts/cache/
 contracts/artifacts/
-contracts/generated/
-contracts/deployments/
 
 # Server
 server/data/
