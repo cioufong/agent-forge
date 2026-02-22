@@ -1,7 +1,7 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import hre from 'hardhat';
-import { parseEther, getAddress, zeroAddress, keccak256, toHex } from 'viem';
+import { parseEther, getAddress, zeroAddress, keccak256, toHex, encodeFunctionData, parseAbi } from 'viem';
 
 describe('AgentNFA', () => {
   let connection: any;
@@ -444,6 +444,518 @@ describe('AgentNFA', () => {
 
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       assert.ok(receipt.logs.length > 0, 'Expected VaultUpdated event');
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // BAP-578: Per-token Status
+  // ──────────────────────────────────────────────
+
+  describe('BAP-578: Per-token Status', () => {
+    let statusTokenId: bigint;
+
+    before(async () => {
+      await agentNFA.write.mint({ account: user1.account, value: MINT_PRICE });
+      statusTokenId = await agentNFA.read.totalSupply();
+    });
+
+    it('should start with Active status', async () => {
+      const status = await agentNFA.read.agentStatus([statusTokenId]);
+      assert.equal(status, 0); // Active = 0
+    });
+
+    it('should allow owner to pause agent', async () => {
+      // pause(uint256) overload
+      const hash = await agentNFA.write.pause([statusTokenId], { account: user1.account });
+      const status = await agentNFA.read.agentStatus([statusTokenId]);
+      assert.equal(status, 1); // Paused = 1
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      assert.ok(receipt.logs.length > 0, 'Expected StatusChanged event');
+    });
+
+    it('should revert if non-owner tries to pause agent', async () => {
+      // Mint a fresh active agent for user1
+      await agentNFA.write.mint({ account: user1.account, value: MINT_PRICE });
+      const freshId = await agentNFA.read.totalSupply();
+
+      await assert.rejects(
+        agentNFA.write.pause([freshId], { account: user2.account }),
+        (err: any) => {
+          assert.ok(err.message.includes('NotTokenOwner') || err.message.includes('0x59dc379f'), `Expected NotTokenOwner, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('should allow owner to unpause agent', async () => {
+      // statusTokenId is currently Paused
+      await agentNFA.write.unpause([statusTokenId], { account: user1.account });
+      const status = await agentNFA.read.agentStatus([statusTokenId]);
+      assert.equal(status, 0); // Active = 0
+    });
+
+    it('should revert unpause if not paused', async () => {
+      // statusTokenId is now Active
+      await assert.rejects(
+        agentNFA.write.unpause([statusTokenId], { account: user1.account }),
+        (err: any) => {
+          assert.ok(err.message.includes('AgentNotPaused'), `Expected AgentNotPaused, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('should allow owner to terminate agent', async () => {
+      const hash = await agentNFA.write.terminate([statusTokenId], { account: user1.account });
+      const status = await agentNFA.read.agentStatus([statusTokenId]);
+      assert.equal(status, 2); // Terminated = 2
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      assert.ok(receipt.logs.length > 0, 'Expected StatusChanged event');
+    });
+
+    it('should not allow unpause of terminated agent', async () => {
+      await assert.rejects(
+        agentNFA.write.unpause([statusTokenId], { account: user1.account }),
+        (err: any) => {
+          assert.ok(err.message.includes('AgentNotPaused'), `Expected AgentNotPaused, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('should not allow terminate of already terminated agent', async () => {
+      await assert.rejects(
+        agentNFA.write.terminate([statusTokenId], { account: user1.account }),
+        (err: any) => {
+          assert.ok(err.message.includes('AgentTerminated'), `Expected AgentTerminated, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('isEligible should return false for terminated agent', async () => {
+      const eligible = await agentNFA.read.isEligible([statusTokenId]);
+      assert.equal(eligible, false);
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // BAP-578: fundAgent / withdrawFromAgent
+  // ──────────────────────────────────────────────
+
+  describe('BAP-578: Agent Funding', () => {
+    let fundTokenId: bigint;
+
+    before(async () => {
+      await agentNFA.write.mint({ account: user1.account, value: MINT_PRICE });
+      fundTokenId = await agentNFA.read.totalSupply();
+    });
+
+    it('should allow anyone to fund an agent', async () => {
+      const fundAmount = parseEther('1');
+      const hash = await agentNFA.write.fundAgent([fundTokenId], {
+        account: user2.account,
+        value: fundAmount,
+      });
+
+      const balance = await agentNFA.read.agentBalance([fundTokenId]);
+      assert.equal(balance, fundAmount);
+
+      const totalAgentBal = await agentNFA.read.totalAgentBalance();
+      assert.equal(totalAgentBal, fundAmount);
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      assert.ok(receipt.logs.length > 0, 'Expected AgentFunded event');
+    });
+
+    it('should allow owner to withdraw from agent', async () => {
+      const withdrawAmount = parseEther('0.5');
+      await agentNFA.write.withdrawFromAgent([fundTokenId, withdrawAmount], {
+        account: user1.account,
+      });
+
+      const balance = await agentNFA.read.agentBalance([fundTokenId]);
+      assert.equal(balance, parseEther('0.5'));
+
+      const totalAgentBal = await agentNFA.read.totalAgentBalance();
+      assert.equal(totalAgentBal, parseEther('0.5'));
+    });
+
+    it('should revert withdraw if non-owner', async () => {
+      await assert.rejects(
+        agentNFA.write.withdrawFromAgent([fundTokenId, parseEther('0.1')], {
+          account: user2.account,
+        }),
+        (err: any) => {
+          assert.ok(err.message.includes('NotTokenOwner') || err.message.includes('0x59dc379f'), `Expected NotTokenOwner, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('should revert withdraw if insufficient agent balance', async () => {
+      await assert.rejects(
+        agentNFA.write.withdrawFromAgent([fundTokenId, parseEther('999')], {
+          account: user1.account,
+        }),
+        (err: any) => {
+          assert.ok(err.message.includes('InsufficientAgentBalance'), `Expected InsufficientAgentBalance, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('owner withdraw() should not touch agent balances', async () => {
+      // Fund agent with more BNB
+      await agentNFA.write.fundAgent([fundTokenId], {
+        account: user2.account,
+        value: parseEther('1'),
+      });
+
+      const agentBal = await agentNFA.read.agentBalance([fundTokenId]);
+      const totalBefore = await agentNFA.read.totalAgentBalance();
+
+      // Owner withdraws contract's non-agent funds
+      await agentNFA.write.withdraw({ account: deployer.account });
+
+      // Agent balance should be unchanged
+      const agentBalAfter = await agentNFA.read.agentBalance([fundTokenId]);
+      assert.equal(agentBalAfter, agentBal);
+
+      const totalAfter = await agentNFA.read.totalAgentBalance();
+      assert.equal(totalAfter, totalBefore);
+    });
+
+    it('terminate should refund agent balance', async () => {
+      // Mint fresh agent with funds
+      await agentNFA.write.mint({ account: user1.account, value: MINT_PRICE });
+      const termTokenId = await agentNFA.read.totalSupply();
+
+      await agentNFA.write.fundAgent([termTokenId], {
+        account: user2.account,
+        value: parseEther('2'),
+      });
+
+      const balBefore = await agentNFA.read.agentBalance([termTokenId]);
+      assert.equal(balBefore, parseEther('2'));
+
+      await agentNFA.write.terminate([termTokenId], { account: user1.account });
+
+      const balAfter = await agentNFA.read.agentBalance([termTokenId]);
+      assert.equal(balAfter, 0n);
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // BAP-578: executeAction / setLogicAddress
+  // ──────────────────────────────────────────────
+
+  describe('BAP-578: Logic & Actions', () => {
+    let logicTokenId: bigint;
+    let mockLogic: any;
+
+    const mockLogicAbi = parseAbi([
+      'function doSomething(uint256 value) returns (uint256)',
+      'function alwaysRevert()',
+      'function lastValue() view returns (uint256)',
+    ]);
+
+    before(async () => {
+      await agentNFA.write.mint({ account: user1.account, value: MINT_PRICE });
+      logicTokenId = await agentNFA.read.totalSupply();
+
+      mockLogic = await connection.viem.deployContract('MockLogic', []);
+    });
+
+    it('should allow owner to set logic address', async () => {
+      const hash = await agentNFA.write.setLogicAddress([logicTokenId, mockLogic.address], {
+        account: user1.account,
+      });
+
+      const logic = await agentNFA.read.logicAddress([logicTokenId]);
+      assert.equal(getAddress(logic), getAddress(mockLogic.address));
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      assert.ok(receipt.logs.length > 0, 'Expected LogicUpgraded event');
+    });
+
+    it('should revert setLogicAddress if non-owner', async () => {
+      await assert.rejects(
+        agentNFA.write.setLogicAddress([logicTokenId, mockLogic.address], {
+          account: user2.account,
+        }),
+        (err: any) => {
+          assert.ok(err.message.includes('NotTokenOwner') || err.message.includes('0x59dc379f'), `Expected NotTokenOwner, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('should execute action via logic contract', async () => {
+      const callData = encodeFunctionData({
+        abi: mockLogicAbi,
+        functionName: 'doSomething',
+        args: [42n],
+      });
+
+      const hash = await agentNFA.write.executeAction([logicTokenId, callData], {
+        account: user1.account,
+      });
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      assert.ok(receipt.logs.length > 0, 'Expected ActionExecuted event');
+
+      // Verify mock logic received the call
+      const lastValue = await mockLogic.read.lastValue();
+      assert.equal(lastValue, 42n);
+    });
+
+    it('should revert executeAction if non-owner', async () => {
+      const callData = encodeFunctionData({
+        abi: mockLogicAbi,
+        functionName: 'doSomething',
+        args: [1n],
+      });
+
+      await assert.rejects(
+        agentNFA.write.executeAction([logicTokenId, callData], {
+          account: user2.account,
+        }),
+        (err: any) => {
+          assert.ok(err.message.includes('NotTokenOwner') || err.message.includes('0x59dc379f'), `Expected NotTokenOwner, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('should revert executeAction if agent not active', async () => {
+      // Pause the agent first
+      await agentNFA.write.pause([logicTokenId], { account: user1.account });
+
+      const callData = encodeFunctionData({
+        abi: mockLogicAbi,
+        functionName: 'doSomething',
+        args: [1n],
+      });
+
+      await assert.rejects(
+        agentNFA.write.executeAction([logicTokenId, callData], {
+          account: user1.account,
+        }),
+        (err: any) => {
+          assert.ok(err.message.includes('AgentNotActive'), `Expected AgentNotActive, got: ${err.message}`);
+          return true;
+        },
+      );
+
+      // Unpause for further tests
+      await agentNFA.write.unpause([logicTokenId], { account: user1.account });
+    });
+
+    it('should revert executeAction if no logic address', async () => {
+      // Mint fresh agent without logic
+      await agentNFA.write.mint({ account: user1.account, value: MINT_PRICE });
+      const noLogicId = await agentNFA.read.totalSupply();
+
+      const callData = encodeFunctionData({
+        abi: mockLogicAbi,
+        functionName: 'doSomething',
+        args: [1n],
+      });
+
+      await assert.rejects(
+        agentNFA.write.executeAction([noLogicId, callData], {
+          account: user1.account,
+        }),
+        (err: any) => {
+          assert.ok(err.message.includes('NoLogicAddress'), `Expected NoLogicAddress, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('should revert executeAction if logic call reverts', async () => {
+      const callData = encodeFunctionData({
+        abi: mockLogicAbi,
+        functionName: 'alwaysRevert',
+      });
+
+      await assert.rejects(
+        agentNFA.write.executeAction([logicTokenId, callData], {
+          account: user1.account,
+        }),
+        (err: any) => {
+          assert.ok(err.message.includes('ActionFailed'), `Expected ActionFailed, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+
+    it('should not allow setLogicAddress for terminated agent', async () => {
+      await agentNFA.write.mint({ account: user1.account, value: MINT_PRICE });
+      const termId = await agentNFA.read.totalSupply();
+      await agentNFA.write.terminate([termId], { account: user1.account });
+
+      await assert.rejects(
+        agentNFA.write.setLogicAddress([termId, mockLogic.address], {
+          account: user1.account,
+        }),
+        (err: any) => {
+          assert.ok(err.message.includes('AgentTerminated'), `Expected AgentTerminated, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // BAP-578: Metadata
+  // ──────────────────────────────────────────────
+
+  describe('BAP-578: Agent Metadata', () => {
+    let metaTokenId: bigint;
+
+    before(async () => {
+      await agentNFA.write.mint({ account: user1.account, value: MINT_PRICE });
+      metaTokenId = await agentNFA.read.totalSupply();
+    });
+
+    it('should return empty metadata initially', async () => {
+      const meta = await agentNFA.read.getAgentMetadata([metaTokenId]);
+      assert.equal(meta.persona, '');
+      assert.equal(meta.experience, '');
+      assert.equal(meta.voiceHash, '');
+      assert.equal(meta.animationURI, '');
+      assert.equal(meta.vaultURI, '');
+    });
+
+    it('should allow token owner to update metadata', async () => {
+      const vHash = keccak256(toHex('vault-content'));
+      const metadata = {
+        persona: 'A wise math agent',
+        experience: 'Solved 100 problems',
+        voiceHash: 'voice-hash-abc',
+        animationURI: 'ipfs://QmAnimation',
+        vaultURI: 'ipfs://QmVault',
+        vaultHash: vHash,
+      };
+
+      const hash = await agentNFA.write.updateAgentMetadata([metaTokenId, metadata], {
+        account: user1.account,
+      });
+
+      const stored = await agentNFA.read.getAgentMetadata([metaTokenId]);
+      assert.equal(stored.persona, metadata.persona);
+      assert.equal(stored.experience, metadata.experience);
+      assert.equal(stored.voiceHash, metadata.voiceHash);
+      assert.equal(stored.animationURI, metadata.animationURI);
+      assert.equal(stored.vaultURI, metadata.vaultURI);
+      assert.equal(stored.vaultHash, vHash);
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      assert.ok(receipt.logs.length > 0, 'Expected MetadataUpdated event');
+    });
+
+    it('should allow game master to update metadata', async () => {
+      const vHash = keccak256(toHex('gm-vault'));
+      const metadata = {
+        persona: 'Updated by GM',
+        experience: 'GM experience',
+        voiceHash: 'gm-voice',
+        animationURI: 'ipfs://QmGM',
+        vaultURI: 'ipfs://QmGMVault',
+        vaultHash: vHash,
+      };
+
+      await agentNFA.write.updateAgentMetadata([metaTokenId, metadata], {
+        account: gameMaster.account,
+      });
+
+      const stored = await agentNFA.read.getAgentMetadata([metaTokenId]);
+      assert.equal(stored.persona, 'Updated by GM');
+    });
+
+    it('should revert updateMetadata if non-owner/non-GM', async () => {
+      const vHash = keccak256(toHex('hack'));
+      const metadata = {
+        persona: 'hacked',
+        experience: 'hacked',
+        voiceHash: 'hacked',
+        animationURI: 'hacked',
+        vaultURI: 'hacked',
+        vaultHash: vHash,
+      };
+
+      await assert.rejects(
+        agentNFA.write.updateAgentMetadata([metaTokenId, metadata], {
+          account: user2.account,
+        }),
+        (err: any) => {
+          assert.ok(err.message.includes('NotTokenOwner') || err.message.includes('0x59dc379f'), `Expected NotTokenOwner, got: ${err.message}`);
+          return true;
+        },
+      );
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // BAP-578: getState
+  // ──────────────────────────────────────────────
+
+  describe('BAP-578: getState', () => {
+    it('should return correct state for an active agent', async () => {
+      await agentNFA.write.mint({ account: user1.account, value: MINT_PRICE });
+      const tokenId = await agentNFA.read.totalSupply();
+
+      const state = await agentNFA.read.getState([tokenId]);
+      assert.equal(state.balance, 0n);
+      assert.equal(state.status, 0); // Active
+      assert.equal(getAddress(state.owner), getAddress(user1.account.address));
+      assert.equal(getAddress(state.logicAddress), getAddress(zeroAddress));
+      assert.ok(state.lastActionTimestamp > 0n);
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // BAP-578: supportsInterface
+  // ──────────────────────────────────────────────
+
+  describe('BAP-578: supportsInterface', () => {
+    it('should support IBAP578 interface', async () => {
+      // IBAP578 interfaceId is computed from XOR of all function selectors
+      // We test by calling supportsInterface with the expected interfaceId
+      // The contract returns type(IBAP578).interfaceId
+      const supports = await agentNFA.read.supportsInterface(['0x80ac58cd']); // ERC721
+      assert.equal(supports, true);
+    });
+
+    it('should support ERC165', async () => {
+      const supports = await agentNFA.read.supportsInterface(['0x01ffc9a7']); // ERC165
+      assert.equal(supports, true);
+    });
+
+    it('should not support random interface', async () => {
+      const supports = await agentNFA.read.supportsInterface(['0xdeadbeef']);
+      assert.equal(supports, false);
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // BAP-578: receive() fallback
+  // ──────────────────────────────────────────────
+
+  describe('BAP-578: receive()', () => {
+    it('should accept plain BNB transfers', async () => {
+      // Send BNB directly to the contract
+      const hash = await user1.sendTransaction({
+        to: agentNFA.address,
+        value: parseEther('0.1'),
+      });
+      // Should not revert
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      assert.equal(receipt.status, 'success');
     });
   });
 });

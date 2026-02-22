@@ -105,7 +105,7 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
             revert ZeroAddress();
 
         afgToken = AFGToken(payable(_afgToken));
-        agentNFA = AgentNFA(_agentNFA);
+        agentNFA = AgentNFA(payable(_agentNFA));
         problemManager = ProblemManager(_problemManager);
         devWallet = _devWallet;
 

@@ -35,7 +35,7 @@ contract AgentNFARenderer is IMetadataRenderer {
     string[3] private _specSymbolFont;
 
     constructor(address _agentNFA) {
-        agentNFA = AgentNFA(_agentNFA);
+        agentNFA = AgentNFA(payable(_agentNFA));
 
         _specNames[0] = "Math";
         _specNames[1] = "Code";

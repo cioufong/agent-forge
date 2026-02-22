@@ -4,3 +4,4 @@ export {Artifact_AgentNFARenderer as AgentNFARenderer} from './AgentNFARenderer.
 export {Artifact_ProblemManager as ProblemManager} from './ProblemManager.js';
 export {Artifact_RewardDistributor as RewardDistributor} from './RewardDistributor.js';
 export {Artifact_VerifierElection as VerifierElection} from './VerifierElection.js';
+export {Artifact_MockLogic as MockLogic} from './MockLogic.js';

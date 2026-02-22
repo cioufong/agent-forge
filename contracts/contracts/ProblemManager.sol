@@ -108,7 +108,7 @@ contract ProblemManager is Ownable, Pausable {
         address _oracle
     ) Ownable(msg.sender) {
         if (_agentNFA == address(0) || _oracle == address(0)) revert ZeroAddress();
-        agentNFA = AgentNFA(_agentNFA);
+        agentNFA = AgentNFA(payable(_agentNFA));
         oracle = _oracle;
         _pause();
     }

@@ -64,6 +64,56 @@ export const AGENT_NFA_ABI = [
     { name: 'specialization', type: 'uint8', indexed: false },
     { name: 'talentRarity', type: 'uint8', indexed: false },
   ]},
+  // BAP-578: State & Metadata
+  { type: 'function', name: 'getState', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ type: 'tuple', components: [
+    { name: 'balance', type: 'uint256' },
+    { name: 'status', type: 'uint8' },
+    { name: 'owner', type: 'address' },
+    { name: 'logicAddress', type: 'address' },
+    { name: 'lastActionTimestamp', type: 'uint256' },
+  ]}], stateMutability: 'view' },
+  { type: 'function', name: 'getAgentMetadata', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ type: 'tuple', components: [
+    { name: 'persona', type: 'string' },
+    { name: 'experience', type: 'string' },
+    { name: 'voiceHash', type: 'string' },
+    { name: 'animationURI', type: 'string' },
+    { name: 'vaultURI', type: 'string' },
+    { name: 'vaultHash', type: 'bytes32' },
+  ]}], stateMutability: 'view' },
+  { type: 'function', name: 'agentStatus', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ type: 'uint8' }], stateMutability: 'view' },
+  { type: 'function', name: 'agentBalance', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'fundAgent', inputs: [{ name: 'tokenId', type: 'uint256' }], outputs: [], stateMutability: 'payable' },
+  { type: 'function', name: 'withdrawFromAgent', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'amount', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'updateAgentMetadata', inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'metadata', type: 'tuple', components: [
+    { name: 'persona', type: 'string' },
+    { name: 'experience', type: 'string' },
+    { name: 'voiceHash', type: 'string' },
+    { name: 'animationURI', type: 'string' },
+    { name: 'vaultURI', type: 'string' },
+    { name: 'vaultHash', type: 'bytes32' },
+  ]}], outputs: [], stateMutability: 'nonpayable' },
+  // BAP-578: Events
+  { type: 'event', name: 'ActionExecuted', inputs: [
+    { name: 'tokenId', type: 'uint256', indexed: true },
+    { name: 'logicAddress', type: 'address', indexed: true },
+    { name: 'data', type: 'bytes', indexed: false },
+  ]},
+  { type: 'event', name: 'StatusChanged', inputs: [
+    { name: 'tokenId', type: 'uint256', indexed: true },
+    { name: 'newStatus', type: 'uint8', indexed: false },
+  ]},
+  { type: 'event', name: 'AgentFunded', inputs: [
+    { name: 'tokenId', type: 'uint256', indexed: true },
+    { name: 'funder', type: 'address', indexed: true },
+    { name: 'amount', type: 'uint256', indexed: false },
+  ]},
+  { type: 'event', name: 'LogicUpgraded', inputs: [
+    { name: 'tokenId', type: 'uint256', indexed: true },
+    { name: 'newLogic', type: 'address', indexed: true },
+  ]},
+  { type: 'event', name: 'MetadataUpdated', inputs: [
+    { name: 'tokenId', type: 'uint256', indexed: true },
+  ]},
   // Admin
   { type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' },
   { type: 'function', name: 'paused', inputs: [], outputs: [{ type: 'bool' }], stateMutability: 'view' },

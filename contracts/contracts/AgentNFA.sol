@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./IMetadataRenderer.sol";
+import "./IBAP578.sol";
 
 /**
  * @title AgentNFA
@@ -14,9 +15,9 @@ import "./IMetadataRenderer.sol";
  *   - Mint NFA = register an AI Agent
  *   - On-chain traits generated from blockhash + prevrandao
  *   - XP / Level system updated by RewardDistributor
- *   - BAP-578: experience, vaultURI, vaultHash
+ *   - BAP-578: full agent lifecycle (status, funding, logic, metadata)
  */
-contract AgentNFA is ERC721, ERC721Burnable, Ownable, Pausable, ReentrancyGuard {
+contract AgentNFA is ERC721, ERC721Burnable, Ownable, Pausable, ReentrancyGuard, IBAP578 {
 
     // ============ Enums ============
 
@@ -64,6 +65,17 @@ contract AgentNFA is ERC721, ERC721Burnable, Ownable, Pausable, ReentrancyGuard 
     // Level 2 = 100 XP, Level 3 = 300, ... Level 20 = 19000
     uint64[20] public levelThresholds;
 
+    // ============ BAP-578 State ============
+
+    mapping(uint256 => Status) public agentStatus;
+    mapping(uint256 => address) public logicAddress;
+    mapping(uint256 => uint256) public lastActionTimestamp;
+    mapping(uint256 => uint256) public agentBalance;
+    uint256 public totalAgentBalance;
+    mapping(uint256 => string) public persona;
+    mapping(uint256 => string) public voiceHash;
+    mapping(uint256 => string) public animationURI;
+
     // ============ Events ============
 
     event AgentMinted(uint256 indexed tokenId, address indexed to, uint8 intelligence, uint8 speed, uint8 specialization, uint8 talentRarity);
@@ -80,11 +92,23 @@ contract AgentNFA is ERC721, ERC721Burnable, Ownable, Pausable, ReentrancyGuard 
     error NotGameMaster();
     error TokenDoesNotExist();
     error ZeroAddress();
+    error NotTokenOwner();
+    error AgentNotActive();
+    error AgentTerminated();
+    error AgentNotPaused();
+    error NoLogicAddress();
+    error ActionFailed();
+    error InsufficientAgentBalance();
 
     // ============ Modifiers ============
 
     modifier onlyGameMaster() {
         if (!isGameMaster[msg.sender] && msg.sender != owner()) revert NotGameMaster();
+        _;
+    }
+
+    modifier onlyTokenOwner(uint256 tokenId) {
+        if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
         _;
     }
 
@@ -144,7 +168,8 @@ contract AgentNFA is ERC721, ERC721Burnable, Ownable, Pausable, ReentrancyGuard 
     function unpause() external onlyOwner { _unpause(); }
 
     function withdraw() external onlyOwner {
-        (bool ok, ) = owner().call{value: address(this).balance}("");
+        uint256 available = address(this).balance - totalAgentBalance;
+        (bool ok, ) = owner().call{value: available}("");
         require(ok);
     }
 
@@ -185,6 +210,10 @@ contract AgentNFA is ERC721, ERC721Burnable, Ownable, Pausable, ReentrancyGuard 
             problemsAttempted: 0,
             mintedAt: uint64(block.timestamp)
         });
+
+        // BAP-578: initialize agent state
+        agentStatus[tokenId] = Status.Active;
+        lastActionTimestamp[tokenId] = block.timestamp;
 
         _safeMint(msg.sender, tokenId);
 
@@ -245,12 +274,123 @@ contract AgentNFA is ERC721, ERC721Burnable, Ownable, Pausable, ReentrancyGuard 
         emit VaultUpdated(tokenId, _uri, _hash);
     }
 
+    // ============ BAP-578 Functions ============
+
+    /// @inheritdoc IBAP578
+    function executeAction(uint256 tokenId, bytes calldata data) external onlyTokenOwner(tokenId) nonReentrant returns (bytes memory) {
+        if (agentStatus[tokenId] != Status.Active) revert AgentNotActive();
+        address logic = logicAddress[tokenId];
+        if (logic == address(0)) revert NoLogicAddress();
+
+        lastActionTimestamp[tokenId] = block.timestamp;
+
+        (bool success, bytes memory result) = logic.call(data);
+        if (!success) revert ActionFailed();
+
+        emit ActionExecuted(tokenId, logic, data);
+        return result;
+    }
+
+    /// @inheritdoc IBAP578
+    function setLogicAddress(uint256 tokenId, address logic) external onlyTokenOwner(tokenId) {
+        if (agentStatus[tokenId] == Status.Terminated) revert AgentTerminated();
+        logicAddress[tokenId] = logic;
+        emit LogicUpgraded(tokenId, logic);
+    }
+
+    /// @inheritdoc IBAP578
+    function fundAgent(uint256 tokenId) external payable {
+        _requireOwned(tokenId);
+        agentBalance[tokenId] += msg.value;
+        totalAgentBalance += msg.value;
+        emit AgentFunded(tokenId, msg.sender, msg.value);
+    }
+
+    /// @notice Withdraw BNB from an agent's balance
+    function withdrawFromAgent(uint256 tokenId, uint256 amount) external onlyTokenOwner(tokenId) nonReentrant {
+        if (agentBalance[tokenId] < amount) revert InsufficientAgentBalance();
+        agentBalance[tokenId] -= amount;
+        totalAgentBalance -= amount;
+
+        (bool ok, ) = msg.sender.call{value: amount}("");
+        require(ok);
+    }
+
+    /// @inheritdoc IBAP578
+    function getState(uint256 tokenId) external view returns (State memory) {
+        _requireOwned(tokenId);
+        return State({
+            balance: agentBalance[tokenId],
+            status: agentStatus[tokenId],
+            owner: ownerOf(tokenId),
+            logicAddress: logicAddress[tokenId],
+            lastActionTimestamp: lastActionTimestamp[tokenId]
+        });
+    }
+
+    /// @inheritdoc IBAP578
+    function getAgentMetadata(uint256 tokenId) external view returns (AgentMetadata memory) {
+        _requireOwned(tokenId);
+        return AgentMetadata({
+            persona: persona[tokenId],
+            experience: experience[tokenId],
+            voiceHash: voiceHash[tokenId],
+            animationURI: animationURI[tokenId],
+            vaultURI: vaultURI[tokenId],
+            vaultHash: vaultHash[tokenId]
+        });
+    }
+
+    /// @inheritdoc IBAP578
+    function updateAgentMetadata(uint256 tokenId, AgentMetadata calldata metadata) external {
+        address tokenOwner = ownerOf(tokenId);
+        if (msg.sender != tokenOwner && !isGameMaster[msg.sender] && msg.sender != owner()) revert NotTokenOwner();
+
+        persona[tokenId] = metadata.persona;
+        experience[tokenId] = metadata.experience;
+        voiceHash[tokenId] = metadata.voiceHash;
+        animationURI[tokenId] = metadata.animationURI;
+        vaultURI[tokenId] = metadata.vaultURI;
+        vaultHash[tokenId] = metadata.vaultHash;
+
+        emit MetadataUpdated(tokenId);
+    }
+
+    /// @notice Pause a specific agent (BAP-578 per-token pause)
+    function pause(uint256 tokenId) external onlyTokenOwner(tokenId) {
+        if (agentStatus[tokenId] != Status.Active) revert AgentNotActive();
+        agentStatus[tokenId] = Status.Paused;
+        emit StatusChanged(tokenId, Status.Paused);
+    }
+
+    /// @notice Unpause a specific agent (BAP-578 per-token unpause)
+    function unpause(uint256 tokenId) external onlyTokenOwner(tokenId) {
+        if (agentStatus[tokenId] != Status.Paused) revert AgentNotPaused();
+        agentStatus[tokenId] = Status.Active;
+        emit StatusChanged(tokenId, Status.Active);
+    }
+
+    /// @inheritdoc IBAP578
+    function terminate(uint256 tokenId) external onlyTokenOwner(tokenId) nonReentrant {
+        if (agentStatus[tokenId] == Status.Terminated) revert AgentTerminated();
+        agentStatus[tokenId] = Status.Terminated;
+        emit StatusChanged(tokenId, Status.Terminated);
+
+        // Refund agent balance to owner
+        uint256 bal = agentBalance[tokenId];
+        if (bal > 0) {
+            agentBalance[tokenId] = 0;
+            totalAgentBalance -= bal;
+            (bool ok, ) = msg.sender.call{value: bal}("");
+            require(ok);
+        }
+    }
+
     // ============ View Functions ============
 
     function isEligible(uint256 tokenId) external view returns (bool) {
-        // Check token exists and is not burned
         address tokenOwner = _ownerOf(tokenId);
-        return tokenOwner != address(0);
+        return tokenOwner != address(0) && agentStatus[tokenId] == Status.Active;
     }
 
     function getTraits(uint256 tokenId) external view returns (AgentTraits memory) {
@@ -291,4 +431,14 @@ contract AgentNFA is ERC721, ERC721Burnable, Ownable, Pausable, ReentrancyGuard 
         require(address(metadataRenderer) != address(0), "Renderer not set");
         return metadataRenderer.constructTokenURI(tokenId);
     }
+
+    // ============ ERC-165 ============
+
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721) returns (bool) {
+        return interfaceId == type(IBAP578).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    // ============ Receive ============
+
+    receive() external payable {}
 }

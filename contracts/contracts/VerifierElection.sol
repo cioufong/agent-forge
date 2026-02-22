@@ -114,7 +114,7 @@ contract VerifierElection is Ownable, Pausable, ReentrancyGuard {
         if (_afgToken == address(0) || _agentNFA == address(0) || _problemManager == address(0))
             revert ZeroAddress();
         afgToken = AFGToken(payable(_afgToken));
-        agentNFA = AgentNFA(_agentNFA);
+        agentNFA = AgentNFA(payable(_agentNFA));
         problemManager = ProblemManager(_problemManager);
     }
 
