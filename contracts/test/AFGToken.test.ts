@@ -14,6 +14,8 @@ describe('AFGToken', () => {
   let user2: any;
   let dexPair: any;
   let afgToken: any;
+  // Use a dummy router address for tests (no actual swap needed)
+  const DUMMY_ROUTER = '0x0000000000000000000000000000000000000001';
 
   before(async () => {
     connection = await hre.network.connect();
@@ -23,6 +25,7 @@ describe('AFGToken', () => {
 
     afgToken = await connection.viem.deployContract('AFGToken', [
       treasury.account.address,
+      DUMMY_ROUTER,
     ]);
   });
 
@@ -63,7 +66,7 @@ describe('AFGToken', () => {
 
     it('should revert when deploying with zero address treasury', async () => {
       await assert.rejects(
-        connection.viem.deployContract('AFGToken', [zeroAddress]),
+        connection.viem.deployContract('AFGToken', [zeroAddress, DUMMY_ROUTER]),
         (err: any) => {
           assert.ok(
             err.message.includes('ZeroAddress'),
@@ -86,6 +89,7 @@ describe('AFGToken', () => {
       // Deploy a fresh token for minting tests
       mintableToken = await connection.viem.deployContract('AFGToken', [
         treasury.account.address,
+        DUMMY_ROUTER,
       ]);
 
       // Set minter and unpause
@@ -163,25 +167,23 @@ describe('AFGToken', () => {
   });
 
   // ──────────────────────────────────────────────
-  // DEX Tax
+  // Transfer Tax (exempt-whitelist model)
   // ──────────────────────────────────────────────
 
-  describe('DEX Tax', () => {
+  describe('Transfer Tax', () => {
     let taxToken: any;
 
     before(async () => {
       taxToken = await connection.viem.deployContract('AFGToken', [
         treasury.account.address,
+        DUMMY_ROUTER,
       ]);
 
-      // Set minter, unpause, register dex pair
+      // Set minter and unpause
       await taxToken.write.setMinter([minter.account.address], {
         account: deployer.account,
       });
       await taxToken.write.unpause({ account: deployer.account });
-      await taxToken.write.setDexPair([dexPair.account.address, true], {
-        account: deployer.account,
-      });
 
       // Mint tokens to user1 for transfer tests
       await taxToken.write.mint(
@@ -190,95 +192,78 @@ describe('AFGToken', () => {
       );
     });
 
-    it('should apply 3% tax when transferring TO a dex pair', async () => {
+    it('should apply 3% tax on non-exempt transfers', async () => {
       const transferAmount = parseEther('1000');
       const expectedTax = (transferAmount * 300n) / 10000n; // 3%
       const expectedNet = transferAmount - expectedTax;
 
-      const treasuryBefore = await taxToken.read.balanceOf([
-        treasury.account.address,
-      ]);
-
-      await taxToken.write.transfer(
-        [dexPair.account.address, transferAmount],
-        { account: user1.account },
-      );
-
-      const dexBalance = await taxToken.read.balanceOf([
-        dexPair.account.address,
-      ]);
-      const treasuryAfter = await taxToken.read.balanceOf([
-        treasury.account.address,
-      ]);
-
-      assert.equal(dexBalance, expectedNet);
-      assert.equal(treasuryAfter - treasuryBefore, expectedTax);
-    });
-
-    it('should apply 3% tax when transferring FROM a dex pair', async () => {
-      // dexPair sends tokens to user2
-      const dexBalance = await taxToken.read.balanceOf([
-        dexPair.account.address,
-      ]);
-      const transferAmount = dexBalance; // send everything the pair has
-      const expectedTax = (transferAmount * 300n) / 10000n;
-      const expectedNet = transferAmount - expectedTax;
-
-      const treasuryBefore = await taxToken.read.balanceOf([
-        treasury.account.address,
-      ]);
+      // Tax accumulates in the token contract itself
+      const contractBefore = await taxToken.read.balanceOf([taxToken.address]);
 
       await taxToken.write.transfer(
         [user2.account.address, transferAmount],
-        { account: dexPair.account },
+        { account: user1.account },
       );
 
-      const user2Balance = await taxToken.read.balanceOf([
-        user2.account.address,
-      ]);
-      const treasuryAfter = await taxToken.read.balanceOf([
-        treasury.account.address,
-      ]);
+      const user2Balance = await taxToken.read.balanceOf([user2.account.address]);
+      const contractAfter = await taxToken.read.balanceOf([taxToken.address]);
 
       assert.equal(user2Balance, expectedNet);
-      assert.equal(treasuryAfter - treasuryBefore, expectedTax);
+      assert.equal(contractAfter - contractBefore, expectedTax);
     });
 
-    it('should NOT apply tax for non-dex transfers', async () => {
+    it('should NOT apply tax when sender is tax-exempt', async () => {
+      // Treasury is tax-exempt by default
       const transferAmount = parseEther('500');
 
-      const user1Before = await taxToken.read.balanceOf([
-        user1.account.address,
-      ]);
-      const treasuryBefore = await taxToken.read.balanceOf([
-        treasury.account.address,
-      ]);
+      // Transfer from treasury to user2
+      const user2Before = await taxToken.read.balanceOf([user2.account.address]);
+      const contractBefore = await taxToken.read.balanceOf([taxToken.address]);
+
+      await taxToken.write.transfer(
+        [user2.account.address, transferAmount],
+        { account: treasury.account },
+      );
+
+      const user2After = await taxToken.read.balanceOf([user2.account.address]);
+      const contractAfter = await taxToken.read.balanceOf([taxToken.address]);
+
+      // User2 should receive the full amount (no tax)
+      assert.equal(user2After - user2Before, transferAmount);
+      // Contract balance unchanged (no tax collected)
+      assert.equal(contractAfter, contractBefore);
+    });
+
+    it('should NOT apply tax when receiver is tax-exempt', async () => {
+      // Set user2 as exempt, transfer from user1 (non-exempt) to user2 (exempt)
+      await taxToken.write.setTaxExempt([user2.account.address, true], {
+        account: deployer.account,
+      });
+
+      const transferAmount = parseEther('100');
+      const user2Before = await taxToken.read.balanceOf([user2.account.address]);
+      const contractBefore = await taxToken.read.balanceOf([taxToken.address]);
 
       await taxToken.write.transfer(
         [user2.account.address, transferAmount],
         { account: user1.account },
       );
 
-      const user2After = await taxToken.read.balanceOf([
-        user2.account.address,
-      ]);
-      const treasuryAfter = await taxToken.read.balanceOf([
-        treasury.account.address,
-      ]);
+      const user2After = await taxToken.read.balanceOf([user2.account.address]);
+      const contractAfter = await taxToken.read.balanceOf([taxToken.address]);
 
-      // User2 should receive the full amount from this transfer
-      // (in addition to what they already had from the previous test)
-      const user1After = await taxToken.read.balanceOf([
-        user1.account.address,
-      ]);
-      assert.equal(user1Before - user1After, transferAmount);
-      // Treasury should not change
-      assert.equal(treasuryAfter, treasuryBefore);
+      assert.equal(user2After - user2Before, transferAmount);
+      assert.equal(contractAfter, contractBefore);
+
+      // Remove exemption
+      await taxToken.write.setTaxExempt([user2.account.address, false], {
+        account: deployer.account,
+      });
     });
 
-    it('should revert when setting zero address as dex pair', async () => {
+    it('should revert when setting zero address as tax-exempt', async () => {
       await assert.rejects(
-        taxToken.write.setDexPair([zeroAddress, true], {
+        taxToken.write.setTaxExempt([zeroAddress, true], {
           account: deployer.account,
         }),
         (err: any) => {
@@ -291,9 +276,9 @@ describe('AFGToken', () => {
       );
     });
 
-    it('should allow owner to change dex tax rate', async () => {
+    it('should allow owner to change tax rate', async () => {
       // Change to 5% (500 BPS)
-      await taxToken.write.setDexTaxBps([500n], {
+      await taxToken.write.setTaxBps([500n], {
         account: deployer.account,
       });
 
@@ -307,29 +292,29 @@ describe('AFGToken', () => {
         { account: minter.account },
       );
 
-      const dexBefore = await taxToken.read.balanceOf([dexPair.account.address]);
-      const treasuryBefore = await taxToken.read.balanceOf([treasury.account.address]);
+      const user2Before = await taxToken.read.balanceOf([user2.account.address]);
+      const contractBefore = await taxToken.read.balanceOf([taxToken.address]);
 
       await taxToken.write.transfer(
-        [dexPair.account.address, transferAmount],
+        [user2.account.address, transferAmount],
         { account: user1.account },
       );
 
-      const dexAfter = await taxToken.read.balanceOf([dexPair.account.address]);
-      const treasuryAfter = await taxToken.read.balanceOf([treasury.account.address]);
+      const user2After = await taxToken.read.balanceOf([user2.account.address]);
+      const contractAfter = await taxToken.read.balanceOf([taxToken.address]);
 
-      assert.equal(dexAfter - dexBefore, expectedNet);
-      assert.equal(treasuryAfter - treasuryBefore, expectedTax);
+      assert.equal(user2After - user2Before, expectedNet);
+      assert.equal(contractAfter - contractBefore, expectedTax);
 
       // Reset to 3%
-      await taxToken.write.setDexTaxBps([300n], {
+      await taxToken.write.setTaxBps([300n], {
         account: deployer.account,
       });
     });
 
-    it('should revert when setting tax above MAX_DEX_TAX_BPS (10%)', async () => {
+    it('should revert when setting tax above MAX_TAX_BPS (10%)', async () => {
       await assert.rejects(
-        taxToken.write.setDexTaxBps([1001n], {
+        taxToken.write.setTaxBps([1001n], {
           account: deployer.account,
         }),
         (err: any) => {
@@ -344,7 +329,7 @@ describe('AFGToken', () => {
 
     it('should revert when non-owner tries to set tax rate', async () => {
       await assert.rejects(
-        taxToken.write.setDexTaxBps([500n], {
+        taxToken.write.setTaxBps([500n], {
           account: user1.account,
         }),
         (err: any) => {
@@ -358,7 +343,7 @@ describe('AFGToken', () => {
     });
 
     it('should allow setting tax to zero', async () => {
-      await taxToken.write.setDexTaxBps([0n], {
+      await taxToken.write.setTaxBps([0n], {
         account: deployer.account,
       });
 
@@ -368,18 +353,18 @@ describe('AFGToken', () => {
         { account: minter.account },
       );
 
-      const treasuryBefore = await taxToken.read.balanceOf([treasury.account.address]);
+      const contractBefore = await taxToken.read.balanceOf([taxToken.address]);
 
       await taxToken.write.transfer(
-        [dexPair.account.address, transferAmount],
+        [user2.account.address, transferAmount],
         { account: user1.account },
       );
 
-      const treasuryAfter = await taxToken.read.balanceOf([treasury.account.address]);
-      assert.equal(treasuryAfter, treasuryBefore); // no tax
+      const contractAfter = await taxToken.read.balanceOf([taxToken.address]);
+      assert.equal(contractAfter, contractBefore); // no tax
 
       // Reset to 3%
-      await taxToken.write.setDexTaxBps([300n], {
+      await taxToken.write.setTaxBps([300n], {
         account: deployer.account,
       });
     });
@@ -393,6 +378,7 @@ describe('AFGToken', () => {
     it('should return INITIAL_REWARD_PER_ROUND at deploy time', async () => {
       const freshToken = await connection.viem.deployContract('AFGToken', [
         treasury.account.address,
+        DUMMY_ROUTER,
       ]);
 
       const reward = await freshToken.read.currentRewardPerRound();
@@ -411,6 +397,7 @@ describe('AFGToken', () => {
     it('should halve the reward after ROUNDS_PER_HALVING * ROUND_DURATION seconds', async () => {
       const freshToken = await connection.viem.deployContract('AFGToken', [
         treasury.account.address,
+        DUMMY_ROUTER,
       ]);
 
       const initialReward = await freshToken.read.INITIAL_REWARD_PER_ROUND();
@@ -429,6 +416,7 @@ describe('AFGToken', () => {
     it('should return 0 after 21+ halvings', async () => {
       const freshToken = await connection.viem.deployContract('AFGToken', [
         treasury.account.address,
+        DUMMY_ROUTER,
       ]);
 
       const roundsPerHalving =
@@ -454,6 +442,7 @@ describe('AFGToken', () => {
       // Use a fresh token that is paused but has a minter
       const pausedToken = await connection.viem.deployContract('AFGToken', [
         treasury.account.address,
+        DUMMY_ROUTER,
       ]);
       await pausedToken.write.setMinter([minter.account.address], {
         account: deployer.account,
@@ -478,6 +467,7 @@ describe('AFGToken', () => {
     it('should allow minting after unpause', async () => {
       const pausedToken = await connection.viem.deployContract('AFGToken', [
         treasury.account.address,
+        DUMMY_ROUTER,
       ]);
       await pausedToken.write.setMinter([minter.account.address], {
         account: deployer.account,

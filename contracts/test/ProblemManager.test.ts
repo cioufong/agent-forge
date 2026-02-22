@@ -724,6 +724,9 @@ describe('ProblemManager', () => {
         [verifierProblemId, 1n, ans],
         { account: user1.account },
       );
+
+      // Advance past reveal deadline into verify phase
+      await connection.networkHelpers.time.increase(REVEAL_DURATION + 1n);
     });
 
     it('should allow resolver to resolve', async () => {
@@ -760,6 +763,9 @@ describe('ProblemManager', () => {
         [pid, 2n, a],
         { account: user1.account },
       );
+
+      // Advance past reveal deadline into verify phase
+      await connection.networkHelpers.time.increase(REVEAL_DURATION + 1n);
 
       await problemManager.write.resolveByVerifiers(
         [pid, ah],

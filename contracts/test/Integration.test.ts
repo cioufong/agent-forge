@@ -30,7 +30,8 @@ describe('Integration: Full Flow', () => {
     [deployer, oracle, devWallet, user1, user2] = walletClients;
 
     // Deploy all contracts
-    afgToken = await connection.viem.deployContract('AFGToken', [deployer.account.address]);
+    const DUMMY_ROUTER = '0x0000000000000000000000000000000000000001';
+    afgToken = await connection.viem.deployContract('AFGToken', [deployer.account.address, DUMMY_ROUTER]);
     agentNFA = await connection.viem.deployContract('AgentNFA', [MINT_PRICE]);
     renderer = await connection.viem.deployContract('AgentNFARenderer', [agentNFA.address]);
     problemManager = await connection.viem.deployContract('ProblemManager', [

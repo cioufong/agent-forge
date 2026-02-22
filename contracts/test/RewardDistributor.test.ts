@@ -46,9 +46,11 @@ describe('RewardDistributor', () => {
     [deployer, oracle, devWallet, user1, user2, user3, user4, user5] =
       walletClients;
 
-    // Deploy AFGToken with deployer as treasury
+    // Deploy AFGToken with deployer as treasury (dummy router for tests)
+    const DUMMY_ROUTER = '0x0000000000000000000000000000000000000001';
     afgToken = await connection.viem.deployContract('AFGToken', [
       deployer.account.address,
+      DUMMY_ROUTER,
     ]);
 
     // Deploy AgentNFA
@@ -70,6 +72,10 @@ describe('RewardDistributor', () => {
 
     // Wire up permissions
     await afgToken.write.setMinter([rewardDistributor.address], {
+      account: deployer.account,
+    });
+    // RewardDistributor must be tax-exempt so rewards aren't taxed on claim
+    await afgToken.write.setTaxExempt([rewardDistributor.address, true], {
       account: deployer.account,
     });
     await afgToken.write.unpause({ account: deployer.account });
