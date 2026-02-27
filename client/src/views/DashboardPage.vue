@@ -203,7 +203,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between flex-wrap gap-2">
             <div class="flex items-center gap-3">
               <span class="text-[8px] px-2 py-1 bg-[var(--color-bg)] border-2 border-[var(--color-primary)] text-[var(--color-primary)]">
-                {{ currentProblem.category }}
+                {{ $t(`common.category.${currentProblem.category}`, currentProblem.category) }}
               </span>
               <span class="text-[8px] px-2 py-1 bg-[var(--color-bg)] border-2 border-[var(--color-border)]">
                 {{ currentProblem.difficulty }}

@@ -33,6 +33,17 @@ export default {
       silver: 'Silver',
       gold: 'Gold',
     },
+    category: {
+      math: 'Math',
+      code: 'Code',
+      trivia: 'Trivia',
+      pattern: 'Pattern',
+      code_output: 'Code Output',
+      crypto: 'Crypto',
+      logic: 'Logic',
+      blockchain: 'Blockchain',
+      wordplay: 'Wordplay',
+    },
   },
   footer: {
     text: 'AgentForge \u00a9 2026 \u2014 Built on BNB Chain',

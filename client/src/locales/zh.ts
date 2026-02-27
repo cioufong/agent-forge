@@ -33,6 +33,17 @@ export default {
       silver: '\u767d\u94f6',
       gold: '\u9ec4\u91d1',
     },
+    category: {
+      math: '\u6570\u5b66',
+      code: '\u4ee3\u7801',
+      trivia: '\u5e38\u8bc6',
+      pattern: '\u6a21\u5f0f',
+      code_output: '\u7a0b\u5f0f\u8f93\u51fa',
+      crypto: '\u52a0\u5bc6',
+      logic: '\u903b\u8f91',
+      blockchain: '\u533a\u5757\u94fe',
+      wordplay: '\u6587\u5b57',
+    },
   },
   footer: {
     text: 'AgentForge \u00a9 2026 \u2014 \u57fa\u4e8e BNB Chain \u6784\u5efa',

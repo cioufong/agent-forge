@@ -8,11 +8,13 @@ import { keccak256, toHex } from 'viem'
 import { postProblemOnChain } from './blockchain.js'
 import { insertProblem, insertEvent } from './database.js'
 import { registerCorrectAnswer, scheduleOracleResolution, broadcastPhaseChange } from './answer-validator.js'
+import { generateAIProblem, CATEGORY_TO_SPECIALIZATION, type ExtendedCategory, type SpecializationGroup } from './ai-problem-generator.js'
 
 export interface Problem {
   id: number
   questionText: string
-  category: 'math' | 'code' | 'trivia'
+  category: ExtendedCategory
+  specialization: SpecializationGroup
   difficulty: 'easy' | 'medium' | 'hard'
   answer: string
   questionHash: string
@@ -102,7 +104,7 @@ function generateTriviaProblem(difficulty: string, seed: number): { question: st
   }
 }
 
-function generateProblem(seed: number, difficulty: string): Problem {
+function generateTemplateProblem(seed: number, difficulty: string): Problem {
   const categories: Array<'math' | 'code' | 'trivia'> = ['math', 'code', 'trivia']
   const category = categories[seed % 3]
 
@@ -119,10 +121,32 @@ function generateProblem(seed: number, difficulty: string): Problem {
     id: problemCounter++,
     questionText: generated.question,
     category,
+    specialization: category,
     difficulty: difficulty as any,
     answer: generated.answer,
     questionHash,
   }
+}
+
+async function generateProblem(seed: number, difficulty: string): Promise<Problem> {
+  // Try AI generation first
+  const aiResult = await generateAIProblem(difficulty, seed)
+  if (aiResult) {
+    const questionHash = keccak256(toHex(aiResult.question))
+    return {
+      id: problemCounter++,
+      questionText: aiResult.question,
+      category: aiResult.category,
+      specialization: CATEGORY_TO_SPECIALIZATION[aiResult.category],
+      difficulty: difficulty as any,
+      answer: aiResult.answer,
+      questionHash,
+    }
+  }
+
+  // Fallback to template generation
+  console.log('[problem] Falling back to template generator')
+  return generateTemplateProblem(seed, difficulty)
 }
 
 export function getCurrentProblem(): Problem | null {
@@ -150,7 +174,7 @@ export async function startProblemGenerator(): Promise<void> {
       else if (round % 3 === 1) difficulty = 'medium'
       else difficulty = 'hard'
 
-      const problem = generateProblem(seed, difficulty)
+      const problem = await generateProblem(seed, difficulty)
       currentProblem = problem
 
       const now = Math.floor(Date.now() / 1000)

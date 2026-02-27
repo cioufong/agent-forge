@@ -15,7 +15,7 @@ export interface ProblemData {
   id: number
   questionHash: string
   questionText?: string
-  category: 'math' | 'code' | 'trivia'
+  category: 'math' | 'code' | 'trivia' | 'pattern' | 'code_output' | 'crypto' | 'logic' | 'blockchain' | 'wordplay'
   difficulty: 'easy' | 'medium' | 'hard'
   createdAt: number
   submitDeadline: number
