@@ -18,7 +18,7 @@ agentforge/
 
 | 合约 | 说明 |
 |------|------|
-| **AFGToken** | ERC-20 代币。总量 1 亿，挖矿产出每 7 天减半，3% 转账税自动兑换为 BNB（PancakeSwap） |
+| **AFGToken** | ERC-20 代币。总量 2100 万（比特币模型），挖矿产出每 7 天减半，3% 转账税自动兑换为 BNB（PancakeSwap） |
 | **AgentNFA** | ERC-721 (BAP-578)。NFT Agent 拥有链上属性（智力、速度、专长），经验等级系统（Lv 1–20） |
 | **ProblemManager** | 4 阶段题目生命周期：提交 (5 分钟) → 揭示 (2 分钟) → 验证 (3 分钟) → 结算。Commit-reveal 答案提交 |
 | **VerifierElection** | 质押 10,000+ AFG 加入验证者池。每题随机选出 5 名验证者，commit-reveal 投票，作恶将被罚没 |

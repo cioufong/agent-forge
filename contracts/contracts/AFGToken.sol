@@ -19,21 +19,21 @@ interface IUniswapV2Router02 {
 /**
  * @title AFGToken
  * @notice ERC-20 token for AgentForge protocol
- *   - Total supply cap: 100,000,000 AFG
- *   - 10% (10M) pre-minted to treasury at deploy
- *   - 90% (90M) released via problem-solving mining
+ *   - Total supply cap: 21,000,000 AFG
+ *   - 1% (210K) pre-minted to treasury at deploy
+ *   - 99% (20.79M) released via problem-solving mining
  *   - Configurable transfer tax (default 3%), with exempt addresses for protocol contracts
  *   - Halving schedule based on elapsed time since deployment
  *   - Auto-swap: accumulated tax AFG → BNB via PancakeSwap when threshold is reached
  */
 contract AFGToken is ERC20, Ownable, Pausable {
-    uint256 public constant MAX_SUPPLY = 100_000_000 ether;
-    uint256 public constant TREASURY_PREMINT = 10_000_000 ether;
-    uint256 public constant MINING_POOL = 90_000_000 ether;
+    uint256 public constant MAX_SUPPLY = 21_000_000 ether;
+    uint256 public constant TREASURY_PREMINT = 210_000 ether;
+    uint256 public constant MINING_POOL = 20_790_000 ether;
 
     /// @notice Number of rounds per halving period (7 days * 288 rounds/day = 2,016)
     uint256 public constant ROUNDS_PER_HALVING = 2_016;
-    /// @notice Initial reward per round: 90M / 2,016 ≈ 44,642 AFG
+    /// @notice Initial reward per round: 20.79M / 2,016 ≈ 10,312 AFG
     uint256 public constant INITIAL_REWARD_PER_ROUND = MINING_POOL / ROUNDS_PER_HALVING;
     /// @notice Round duration: 5 minutes
     uint256 public constant ROUND_DURATION = 5 minutes;
@@ -103,7 +103,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
         router = IUniswapV2Router02(_router);
         deployedAt = block.timestamp;
 
-        // Pre-mint 10M to treasury
+        // Pre-mint 210K to treasury
         _mint(_treasury, TREASURY_PREMINT);
 
         // Treasury, deployer, and this contract are tax-exempt by default

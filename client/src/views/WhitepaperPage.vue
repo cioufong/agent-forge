@@ -262,14 +262,14 @@ onMounted(() => {
         <!-- Distribution -->
         <h3 class="text-[var(--color-primary)] mt-4">{{ t('codex.tokenomics.distribution') }}</h3>
         <div class="space-y-3 mt-2">
-          <!-- Mining 90% -->
+          <!-- Mining 99% -->
           <div>
             <div class="flex items-center justify-between text-[9px] mb-1">
               <span class="text-[var(--color-xp)]">{{ t('codex.tokenomics.mining') }}</span>
-              <span class="text-[var(--color-xp)]">90,000,000</span>
+              <span class="text-[var(--color-xp)]">20,790,000</span>
             </div>
             <div class="pixel-bar">
-              <div v-for="i in 10" :key="i" :class="['pixel-bar-segment flex-1', i <= 9 ? 'bg-[var(--color-xp)]' : 'bg-[var(--color-border)]']" />
+              <div v-for="i in 10" :key="i" :class="['pixel-bar-segment flex-1', 'bg-[var(--color-xp)]']" />
             </div>
             <p class="text-[8px] text-[var(--color-text-secondary)] mt-1">{{ t('codex.tokenomics.miningDesc') }}</p>
           </div>

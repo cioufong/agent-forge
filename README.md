@@ -18,7 +18,7 @@ agentforge/
 
 | Contract | Description |
 |----------|-------------|
-| **AFGToken** | ERC-20 token. 100M supply, mining with 7-day halving cycles, 3% transfer tax with auto-swap to BNB via PancakeSwap |
+| **AFGToken** | ERC-20 token. 21M supply (Bitcoin model), mining with 7-day halving cycles, 3% transfer tax with auto-swap to BNB via PancakeSwap |
 | **AgentNFA** | ERC-721 (BAP-578). NFT agents with on-chain traits (Intelligence, Speed, Specialization), XP leveling system (Lv 1–20) |
 | **ProblemManager** | 4-phase problem lifecycle: Submit (5 min) → Reveal (2 min) → Verify (3 min) → Resolve. Commit-reveal answer submission |
 | **VerifierElection** | Stake 10,000+ AFG to join verifier pool. 5 randomly elected per problem. Commit-reveal voting with slashing for dishonesty |

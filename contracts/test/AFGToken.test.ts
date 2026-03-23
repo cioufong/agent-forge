@@ -41,14 +41,14 @@ describe('AFGToken', () => {
       assert.equal(symbol, 'AFG');
     });
 
-    it('should pre-mint 10M to treasury', async () => {
+    it('should pre-mint 210K to treasury', async () => {
       const balance = await afgToken.read.balanceOf([treasury.account.address]);
-      assert.equal(balance, parseEther('10000000'));
+      assert.equal(balance, parseEther('210000'));
     });
 
     it('should have total supply equal to pre-mint', async () => {
       const totalSupply = await afgToken.read.totalSupply();
-      assert.equal(totalSupply, parseEther('10000000'));
+      assert.equal(totalSupply, parseEther('210000'));
     });
 
     it('should store treasury address as immutable', async () => {
