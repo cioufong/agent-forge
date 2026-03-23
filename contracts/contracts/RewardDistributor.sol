@@ -91,6 +91,7 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     error OnlyOracle();
     error TransferFailed();
     error InvalidWinner();
+    error NotTaxExempt();
 
     // ============ Constructor ============
 
@@ -110,6 +111,17 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
         devWallet = _devWallet;
 
         _pause();
+    }
+
+    // ============ Setup Verification ============
+
+    /**
+     * @notice Verify that this contract is tax-exempt on AFGToken. [M-08 fix]
+     * @dev MUST be called after deployment and after AFGToken.setTaxExempt(address(this), true).
+     *      Reverts if this contract is not tax-exempt, preventing reward leakage to tax.
+     */
+    function checkSetup() external view {
+        if (!afgToken.isTaxExempt(address(this))) revert NotTaxExempt();
     }
 
     // ============ Admin ============
@@ -201,6 +213,9 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     function claimRewards() external nonReentrant whenNotPaused {
         uint256 amount = pendingRewards[msg.sender];
         if (amount == 0) revert NoRewards();
+
+        // Verify tax exemption to prevent silent reward loss [M-08 fix]
+        if (!afgToken.isTaxExempt(address(this))) revert NotTaxExempt();
 
         pendingRewards[msg.sender] = 0;
         bool ok = afgToken.transfer(msg.sender, amount);

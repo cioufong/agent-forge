@@ -139,11 +139,15 @@ contract VerifierElection is Ownable, Pausable, ReentrancyGuard {
         if (isInPool[tokenId]) revert AlreadyStaked();
 
         // Transfer AFG from staker to this contract
+        // Record actual received amount to handle fee-on-transfer tokens [C-04 fix]
+        uint256 balBefore = afgToken.balanceOf(address(this));
         afgToken.transferFrom(msg.sender, address(this), amount);
+        uint256 actualReceived = afgToken.balanceOf(address(this)) - balBefore;
+        if (actualReceived < MIN_STAKE) revert InsufficientStake();
 
         verifiers[tokenId] = VerifierInfo({
             tokenId: tokenId,
-            stakedAmount: amount,
+            stakedAmount: actualReceived,
             active: true
         });
 
@@ -255,6 +259,10 @@ contract VerifierElection is Ownable, Pausable, ReentrancyGuard {
      * @param commitHash keccak256(abi.encodePacked(answerHash, salt))
      */
     function commitVote(uint256 problemId, uint256 tokenId, bytes32 commitHash) external whenNotPaused {
+        // Enforce Verify phase [M-10 fix]
+        ProblemManager.Phase phase = problemManager.getPhase(problemId);
+        if (phase != ProblemManager.Phase.Verify) revert NotInVerifyPhase();
+
         if (agentNFA.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
         if (!isElected[problemId][tokenId]) revert NotElected();
 
@@ -281,6 +289,10 @@ contract VerifierElection is Ownable, Pausable, ReentrancyGuard {
         bytes32 answerHash,
         bytes32 salt
     ) external {
+        // Enforce Verify phase [M-10 fix]
+        ProblemManager.Phase phase = problemManager.getPhase(problemId);
+        if (phase != ProblemManager.Phase.Verify) revert NotInVerifyPhase();
+
         if (agentNFA.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
         if (!isElected[problemId][tokenId]) revert NotElected();
 

@@ -68,9 +68,10 @@ export async function oracleResolve(problemId: number): Promise<void> {
     const winners = await getWinnersOnChain(BigInt(problemId))
     console.log(`[oracle] Problem #${problemId}: ${winners.length} winner(s)`)
 
-    // Group winners by tier based on NFA level (parallel lookups)
+    // H-01: Group winners by tier (bronze=0, silver=1, gold=2) based on NFA level
+    // Then call distributeRewards once with all three tier arrays
     if (winners.length > 0) {
-      const tierGroups: Map<number, bigint[]> = new Map()
+      const tierGroups: Map<number, bigint[]> = new Map([[0, []], [1, []], [2, []]])
 
       const tiers = await Promise.all(
         winners.map(async (tokenId) => {
@@ -87,14 +88,16 @@ export async function oracleResolve(problemId: number): Promise<void> {
         tierGroups.get(tier)!.push(winners[i])
       }
 
-      // Distribute rewards per tier
-      for (const [tier, tierWinners] of tierGroups) {
-        try {
-          await distributeRewardsOnChain(BigInt(problemId), tier, tierWinners)
-          console.log(`[oracle] Tier ${tier} rewards distributed for ${tierWinners.length} winner(s)`)
-        } catch (err: any) {
-          console.warn(`[oracle] Tier ${tier} distribution failed: ${err.message}`)
-        }
+      try {
+        await distributeRewardsOnChain(
+          BigInt(problemId),
+          tierGroups.get(0) || [],
+          tierGroups.get(1) || [],
+          tierGroups.get(2) || [],
+        )
+        console.log(`[oracle] Rewards distributed: bronze=${tierGroups.get(0)!.length}, silver=${tierGroups.get(1)!.length}, gold=${tierGroups.get(2)!.length}`)
+      } catch (err: any) {
+        console.warn(`[oracle] Reward distribution failed: ${err.message}`)
       }
     }
 
@@ -104,7 +107,11 @@ export async function oracleResolve(problemId: number): Promise<void> {
       winnerTokenIds: winners.map(w => Number(w)),
       oracleFallback: true,
     })
+
+    // M-01: Only delete cached answer on success (avoid losing it if on-chain resolution fails)
+    correctAnswers.delete(problemId)
   } catch (err: any) {
+    // M-01: Do NOT delete correctAnswers here — keep it so we can retry
     console.warn(`[oracle] On-chain resolution failed: ${err.message}`)
     insertEvent('problem-resolved', {
       problemId,
@@ -113,8 +120,6 @@ export async function oracleResolve(problemId: number): Promise<void> {
       error: err.message,
     })
   }
-
-  correctAnswers.delete(problemId)
 }
 
 /**

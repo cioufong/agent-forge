@@ -16,7 +16,7 @@ interface ServerEvent {
   created_at: number
 }
 
-const POLL_INTERVAL = 5000
+const POLL_INTERVAL = parseInt(import.meta.env.VITE_POLL_INTERVAL || '5000', 10)
 
 let lastEventTimestamp = 0
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -37,7 +37,13 @@ function startPolling() {
         if (event.created_at > lastEventTimestamp) {
           lastEventTimestamp = event.created_at
         }
-        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
+        let data: any
+        try {
+          data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
+        } catch (parseErr) {
+          console.warn(`[poll] Malformed event data for event #${event.id}, skipping:`, parseErr)
+          continue
+        }
         const typeHandlers = handlers.get(event.type)
         if (typeHandlers) {
           for (const handler of typeHandlers) {

@@ -6,10 +6,39 @@
 
 import { type Log } from 'viem'
 import { getPublicClient, getContracts, getABI, getAgentNFAData, getWinnersOnChain } from './blockchain.js'
-import { upsertAgent, insertSubmission, markSubmissionRevealed, updateAgentStats, incrementAgentSolved, upsertLeaderboard, insertRewardHistory, markSubmissionCorrect, insertEvent } from './database.js'
+import { upsertAgent, insertSubmission, markSubmissionRevealed, updateAgentStats, incrementAgentSolved, upsertLeaderboard, insertRewardHistory, markSubmissionCorrect, insertEvent, getDatabase } from './database.js'
 import { pauseGenerator, resumeGenerator } from './problem-generator.js'
 
 let unwatchFns: Array<() => void> = []
+
+// M-02 fix: event idempotency — track processed events by txHash+logIndex
+const processedEvents = new Set<string>()
+
+function eventKey(log: Log): string {
+  return `${log.transactionHash}:${log.logIndex}`
+}
+
+function isDuplicate(log: Log): boolean {
+  const key = eventKey(log)
+  if (processedEvents.has(key)) return true
+  processedEvents.add(key)
+  // Cap the set size to prevent unbounded memory growth
+  if (processedEvents.size > 10000) {
+    const entries = Array.from(processedEvents)
+    for (let i = 0; i < 5000; i++) {
+      processedEvents.delete(entries[i])
+    }
+  }
+  return false
+}
+
+function hasRewardHistoryEntry(problemId: number, tokenId: number): boolean {
+  const db = getDatabase()
+  const row = db.prepare(
+    'SELECT 1 FROM reward_history WHERE problem_id = ? AND token_id = ? LIMIT 1'
+  ).get(problemId, tokenId)
+  return !!row
+}
 
 export async function startEventListener(): Promise<void> {
   console.log('[events] Starting on-chain event listener...')
@@ -28,6 +57,7 @@ export async function startEventListener(): Promise<void> {
         for (const log of logs) {
           const args = (log as any).args
           if (!args) continue
+          if (isDuplicate(log)) continue
 
           console.log(`[event] AgentMinted #${args.tokenId}`)
           upsertAgent({
@@ -67,6 +97,7 @@ export async function startEventListener(): Promise<void> {
         for (const log of logs) {
           const args = (log as any).args
           if (!args) continue
+          if (isDuplicate(log)) continue
 
           console.log(`[event] AnswerSubmitted: problem #${args.problemId} by agent #${args.tokenId}`)
           insertSubmission(
@@ -100,6 +131,7 @@ export async function startEventListener(): Promise<void> {
         for (const log of logs) {
           const args = (log as any).args
           if (!args) continue
+          if (isDuplicate(log)) continue
 
           console.log(`[event] AnswerRevealed: problem #${args.problemId} by agent #${args.tokenId}`)
           markSubmissionRevealed(
@@ -132,6 +164,7 @@ export async function startEventListener(): Promise<void> {
         for (const log of logs) {
           const args = (log as any).args
           if (!args) continue
+          if (isDuplicate(log)) continue
 
           const prProblemId = Number(args.problemId)
           const winnerIds = args.winnerTokenIds?.map((id: bigint) => Number(id)) || []
@@ -167,6 +200,7 @@ export async function startEventListener(): Promise<void> {
         for (const log of logs) {
           const args = (log as any).args
           if (!args) continue
+          if (isDuplicate(log)) continue
 
           const tokenIdNum = Number(args.tokenId)
           const xpAmount = Number(args.amount)
@@ -206,26 +240,43 @@ export async function startEventListener(): Promise<void> {
         for (const log of logs) {
           const args = (log as any).args
           if (!args) continue
+          if (isDuplicate(log)) continue
 
           const rdProblemId = Number(args.problemId)
-          const rdTier = Number(args.tier)
-          console.log(`[event] RewardsDistributed: problem #${rdProblemId}, tier ${rdTier}`)
+          // H-02: RewardsDistributed event has no `tier` field; signature is (uint256 problemId, uint256 totalAmount)
+          console.log(`[event] RewardsDistributed: problem #${rdProblemId}, totalAmount ${args.totalAmount}`)
 
           // Fetch winners and update leaderboard + reward history (async, fire-and-forget)
           void (async () => {
             try {
               const winners = await getWinnersOnChain(BigInt(rdProblemId))
               const totalAmount = args.totalAmount ? Number(args.totalAmount) : 0
+              // H-08: Equal split is an approximation of the contract's weighted distribution.
+              // The contract distributes with INT-weighted shares + 1st place bonus, but for
+              // the DB cache we use a simple equal split as an acceptable approximation.
               const perWinner = winners.length > 0 ? totalAmount / winners.length : 0
 
               for (let i = 0; i < winners.length; i++) {
                 const wTokenId = Number(winners[i])
-                insertRewardHistory(rdProblemId, wTokenId, perWinner, rdTier, i + 1)
+                // M-02: Skip if reward_history already has an entry for this problemId+tokenId
+                if (hasRewardHistoryEntry(rdProblemId, wTokenId)) {
+                  console.log(`[event] RewardsDistributed: skipping duplicate reward for problem #${rdProblemId}, agent #${wTokenId}`)
+                  continue
+                }
+                // H-02: RewardsDistributed has no tier field; use 0 as default for DB cache
+                insertRewardHistory(rdProblemId, wTokenId, perWinner, 0, i + 1)
                 incrementAgentSolved(wTokenId)
 
                 try {
                   const agentData = await getAgentNFAData(BigInt(wTokenId))
-                  const ownerAddr = (agentData.stats as any).owner || ''
+                  // H-08: AgentStats struct has no `owner` field. Use ownerOf(tokenId) via
+                  // the public client to get the NFT owner address.
+                  const client = getPublicClient()
+                  const addrs = getContracts()
+                  const abi = getABI('AgentNFA')
+                  const ownerAddr = await client.readContract({
+                    address: addrs.agentNFA, abi, functionName: 'ownerOf', args: [BigInt(wTokenId)],
+                  }) as string
                   upsertLeaderboard({
                     tokenId: wTokenId,
                     owner: ownerAddr,
@@ -243,7 +294,6 @@ export async function startEventListener(): Promise<void> {
 
           insertEvent('rewards-distributed', {
             problemId: rdProblemId,
-            tier: rdTier,
             totalAmount: args.totalAmount?.toString(),
           })
         }
@@ -265,6 +315,7 @@ export async function startEventListener(): Promise<void> {
         for (const log of logs) {
           const args = (log as any).args
           if (!args) continue
+          if (isDuplicate(log)) continue
 
           console.log(`[event] VerifiersElected: problem #${args.problemId}`)
           insertEvent('verifiers-elected', {
@@ -290,6 +341,7 @@ export async function startEventListener(): Promise<void> {
         for (const log of logs) {
           const args = (log as any).args
           if (!args) continue
+          if (isDuplicate(log)) continue
 
           console.log(`[event] ConsensusReached: problem #${args.problemId} (${args.agreeCount}/5)`)
           insertEvent('consensus-reached', {
@@ -316,6 +368,7 @@ export async function startEventListener(): Promise<void> {
         for (const log of logs) {
           const args = (log as any).args
           if (!args) continue
+          if (isDuplicate(log)) continue
 
           console.log(`[event] OracleFallbackTriggered: problem #${args.problemId}`)
           insertEvent('oracle-fallback', {

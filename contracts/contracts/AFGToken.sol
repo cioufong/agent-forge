@@ -69,6 +69,10 @@ contract AFGToken is ERC20, Ownable, Pausable {
     /// @notice Whether auto-swap is enabled
     bool public swapEnabled = true;
 
+    /// @notice Minimum swap output rate in BPS (e.g., 9500 = accept up to 5% slippage) [M-06 fix]
+    /// @dev 0 means no minimum (legacy behavior); owner can set to enable protection
+    uint256 public minSwapRateBps = 9500;
+
     /// @dev Reentrancy lock for swap operations
     bool private _swapping;
 
@@ -79,6 +83,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
     event SwapEnabledUpdated(bool enabled);
     event RouterUpdated(address indexed newRouter);
     event TaxSwapped(uint256 afgAmount, uint256 bnbAmount);
+    event MinSwapRateUpdated(uint256 newBps);
 
     error OnlyMinter();
     error OnlySelf();
@@ -87,6 +92,8 @@ contract AFGToken is ERC20, Ownable, Pausable {
     error TaxTooHigh();
     error SwapThresholdTooHigh();
     error SwapThresholdTooLow();
+    error TransferWhilePaused();
+    error InvalidSwapRate();
 
     modifier onlyMinter() {
         if (msg.sender != minter) revert OnlyMinter();
@@ -159,6 +166,13 @@ contract AFGToken is ERC20, Ownable, Pausable {
         emit RouterUpdated(_router);
     }
 
+    /// @notice Set minimum swap output rate in BPS (e.g., 9500 = 5% max slippage) [M-06 fix]
+    function setMinSwapRate(uint256 _bps) external onlyOwner {
+        if (_bps > 10000) revert InvalidSwapRate();
+        minSwapRateBps = _bps;
+        emit MinSwapRateUpdated(_bps);
+    }
+
     function pause() external onlyOwner {
         _pause();
     }
@@ -204,6 +218,11 @@ contract AFGToken is ERC20, Ownable, Pausable {
         address to,
         uint256 value
     ) internal virtual override {
+        // Block regular transfers when paused; allow mint (from == 0) and burn (to == 0) [H-04 fix]
+        if (paused() && from != address(0) && to != address(0)) {
+            revert TransferWhilePaused();
+        }
+
         // Apply tax unless sender or receiver is exempt (or mint/burn)
         if (value > 0 && from != address(0) && to != address(0)) {
             if (!isTaxExempt[from] && !isTaxExempt[to]) {
@@ -230,6 +249,7 @@ contract AFGToken is ERC20, Ownable, Pausable {
     /**
      * @notice Execute auto-swap of accumulated AFG tax to BNB. Only callable by this contract.
      * @dev External so it can be wrapped in try-catch within _update [C-01 fix]
+     * @dev Uses minSwapRateBps to enforce minimum output and prevent sandwich attacks [M-06 fix]
      */
     function executeSwap(uint256 amount) external {
         if (msg.sender != address(this)) revert OnlySelf();
@@ -240,16 +260,35 @@ contract AFGToken is ERC20, Ownable, Pausable {
 
         uint256 balBefore = treasury.balance;
 
+        // Use last swap rate to estimate minimum output [M-06 fix]
+        // minSwapRateBps provides a configurable slippage floor
+        // The actual amountOutMin is left as 0 in the router call because
+        // swapExactTokensForETHSupportingFeeOnTransferTokens cannot predict
+        // exact output for fee-on-transfer tokens; we verify post-swap instead.
         router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             amount,
-            0, // accept any amount of BNB (risk bounded by threshold)
+            0,
             path,
             treasury,
             block.timestamp
         );
 
-        emit TaxSwapped(amount, treasury.balance - balBefore);
+        uint256 received = treasury.balance - balBefore;
+        // Store last swap rate for reference and future minimum calculations
+        if (_lastSwapRate > 0 && minSwapRateBps > 0) {
+            // Verify received amount is within acceptable slippage of last known rate
+            uint256 expectedMin = (amount * _lastSwapRate * minSwapRateBps) / (1e18 * 10000);
+            require(received >= expectedMin, "Swap slippage too high");
+        }
+        if (received > 0) {
+            _lastSwapRate = (received * 1e18) / amount;
+        }
+
+        emit TaxSwapped(amount, received);
     }
+
+    /// @dev Last known swap rate (BNB per AFG scaled by 1e18) for slippage protection [M-06]
+    uint256 private _lastSwapRate;
 
     /// @dev Required to receive BNB from router during swap
     receive() external payable {}

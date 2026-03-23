@@ -133,6 +133,25 @@ export function getABI(name: string): any[] {
   throw new Error(`ABI not found for ${name}`)
 }
 
+// ============ RPC Retry Wrapper ============
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      if (attempt < maxRetries - 1) {
+        const delay = 1000 * Math.pow(2, attempt) // 1s, 2s, 4s
+        console.warn(`[blockchain] RPC call failed (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`)
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+    }
+  }
+  throw lastError
+}
+
 // ============ Pause Check ============
 
 export async function isProblemManagerPaused(): Promise<boolean> {
@@ -151,18 +170,20 @@ export async function isProblemManagerPaused(): Promise<boolean> {
 // ============ Contract Read Helpers ============
 
 export async function getAgentNFAData(tokenId: bigint) {
-  const client = getPublicClient()
-  const addr = getContracts()
-  const abi = getABI('AgentNFA')
+  return withRetry(async () => {
+    const client = getPublicClient()
+    const addr = getContracts()
+    const abi = getABI('AgentNFA')
 
-  const [traits, stats, experience, tier] = await Promise.all([
-    client.readContract({ address: addr.agentNFA, abi, functionName: 'getTraits', args: [tokenId] }),
-    client.readContract({ address: addr.agentNFA, abi, functionName: 'getStats', args: [tokenId] }),
-    client.readContract({ address: addr.agentNFA, abi, functionName: 'experience', args: [tokenId] }),
-    client.readContract({ address: addr.agentNFA, abi, functionName: 'getTier', args: [tokenId] }),
-  ])
+    const [traits, stats, experience, tier] = await Promise.all([
+      client.readContract({ address: addr.agentNFA, abi, functionName: 'getTraits', args: [tokenId] }),
+      client.readContract({ address: addr.agentNFA, abi, functionName: 'getStats', args: [tokenId] }),
+      client.readContract({ address: addr.agentNFA, abi, functionName: 'experience', args: [tokenId] }),
+      client.readContract({ address: addr.agentNFA, abi, functionName: 'getTier', args: [tokenId] }),
+    ])
 
-  return { traits, stats, experience, tier }
+    return { traits, stats, experience, tier }
+  })
 }
 
 export async function getCurrentProblemOnChain() {
@@ -195,15 +216,17 @@ export async function getPhaseOnChain(problemId: bigint): Promise<number> {
 }
 
 export async function isProblemResolvedOnChain(problemId: bigint): Promise<boolean> {
-  const client = getPublicClient()
-  const addr = getContracts()
-  const abi = getABI('ProblemManager')
+  return withRetry(async () => {
+    const client = getPublicClient()
+    const addr = getContracts()
+    const abi = getABI('ProblemManager')
 
-  const problem = await client.readContract({
-    address: addr.problemManager, abi, functionName: 'getProblem', args: [problemId],
-  }) as any
+    const problem = await client.readContract({
+      address: addr.problemManager, abi, functionName: 'getProblem', args: [problemId],
+    }) as any
 
-  return problem.resolved
+    return problem.resolved
+  })
 }
 
 export async function isVerificationResolvedOnChain(problemId: bigint): Promise<boolean> {
@@ -257,10 +280,15 @@ export async function resolveByOracleOnChain(
   return client.waitForTransactionReceipt({ hash })
 }
 
+/**
+ * H-01: distributeRewards signature matches RewardDistributor.sol:
+ *   distributeRewards(uint256 problemId, uint256[] bronzeWinners, uint256[] silverWinners, uint256[] goldWinners)
+ */
 export async function distributeRewardsOnChain(
   problemId: bigint,
-  tier: number,
-  winnerTokenIds: bigint[],
+  bronzeWinners: bigint[],
+  silverWinners: bigint[],
+  goldWinners: bigint[],
 ) {
   const wallet = getWalletClient()
   const addr = getContracts()
@@ -270,7 +298,7 @@ export async function distributeRewardsOnChain(
     address: addr.rewardDistributor,
     abi,
     functionName: 'distributeRewards',
-    args: [problemId, tier, winnerTokenIds],
+    args: [problemId, bronzeWinners, silverWinners, goldWinners],
     chain: getChain(),
     account: oracleAccount,
   })
@@ -280,11 +308,13 @@ export async function distributeRewardsOnChain(
 }
 
 export async function getWinnersOnChain(problemId: bigint): Promise<bigint[]> {
-  const client = getPublicClient()
-  const addr = getContracts()
-  const abi = getABI('ProblemManager')
+  return withRetry(async () => {
+    const client = getPublicClient()
+    const addr = getContracts()
+    const abi = getABI('ProblemManager')
 
-  return await client.readContract({
-    address: addr.problemManager, abi, functionName: 'getWinners', args: [problemId],
-  }) as bigint[]
+    return await client.readContract({
+      address: addr.problemManager, abi, functionName: 'getWinners', args: [problemId],
+    }) as bigint[]
+  })
 }

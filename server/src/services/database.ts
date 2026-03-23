@@ -188,16 +188,61 @@ function runMigrations(database: Database.Database, currentVersion: number): voi
         CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
       `,
     },
+    {
+      version: 8,
+      name: 'change_real_to_text_for_token_amounts',
+      up: `
+        -- M-03: Change REAL columns to TEXT to preserve precision for token amounts.
+        -- SQLite ALTER TABLE cannot change column types, so recreate tables.
+
+        -- leaderboard: total_rewards REAL -> TEXT
+        CREATE TABLE leaderboard_new (
+          token_id INTEGER PRIMARY KEY,
+          owner TEXT NOT NULL,
+          total_rewards TEXT NOT NULL DEFAULT '0',
+          problems_solved INTEGER NOT NULL DEFAULT 0,
+          level INTEGER NOT NULL DEFAULT 1,
+          xp INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL
+        );
+        INSERT INTO leaderboard_new SELECT token_id, owner, CAST(total_rewards AS TEXT), problems_solved, level, xp, updated_at FROM leaderboard;
+        DROP TABLE leaderboard;
+        ALTER TABLE leaderboard_new RENAME TO leaderboard;
+        CREATE INDEX IF NOT EXISTS idx_leaderboard_rewards ON leaderboard(total_rewards DESC);
+        CREATE INDEX IF NOT EXISTS idx_leaderboard_solved ON leaderboard(problems_solved DESC);
+
+        -- reward_history: amount REAL -> TEXT
+        CREATE TABLE reward_history_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          problem_id INTEGER NOT NULL,
+          token_id INTEGER NOT NULL,
+          amount TEXT NOT NULL,
+          tier INTEGER NOT NULL,
+          placement INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY (problem_id) REFERENCES problems(id)
+        );
+        INSERT INTO reward_history_new SELECT id, problem_id, token_id, CAST(amount AS TEXT), tier, placement, created_at FROM reward_history;
+        DROP TABLE reward_history;
+        ALTER TABLE reward_history_new RENAME TO reward_history;
+        CREATE INDEX IF NOT EXISTS idx_rewards_token ON reward_history(token_id);
+        CREATE INDEX IF NOT EXISTS idx_rewards_problem ON reward_history(problem_id);
+      `,
+    },
   ]
 
+  // H-06: Wrap each migration in a transaction so partial failures don't corrupt schema
   for (const migration of migrations) {
     if (migration.version > currentVersion) {
       console.log(`🔄 Running migration ${migration.version}: ${migration.name}`)
-      database.exec(migration.up)
-      database.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
-        migration.version,
-        Date.now(),
-      )
+      const runMigration = database.transaction(() => {
+        database.exec(migration.up)
+        database.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
+          migration.version,
+          Date.now(),
+        )
+      })
+      runMigration()
     }
   }
 }
@@ -243,9 +288,14 @@ export function insertSubmission(
   submittedAt: number,
 ): void {
   const database = getDatabase()
+  // H-07: Use INSERT ... ON CONFLICT to preserve existing is_correct, revealed fields
   database.prepare(`
-    INSERT OR REPLACE INTO submissions (problem_id, token_id, answer_hash, answer_text, submitted_at)
+    INSERT INTO submissions (problem_id, token_id, answer_hash, answer_text, submitted_at)
     VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(problem_id, token_id) DO UPDATE SET
+      answer_hash = excluded.answer_hash,
+      answer_text = excluded.answer_text,
+      submitted_at = excluded.submitted_at
   `).run(problemId, tokenId, answerHash, answerText, submittedAt)
 }
 
@@ -311,12 +361,26 @@ export function getLeaderboard(limit = 50): any[] {
 
 export function getCurrentProblem(): any {
   const database = getDatabase()
-  return database.prepare('SELECT * FROM problems WHERE resolved = 0 ORDER BY created_at DESC LIMIT 1').get()
+  // C-01: Exclude correct_answer and correct_answer_hash for unresolved problems
+  return database.prepare(`
+    SELECT id, question_hash, question_text, difficulty, category, created_at, deadline,
+           submit_deadline, reveal_deadline, verify_deadline, oracle_fallback, resolved,
+           CASE WHEN resolved = 1 THEN correct_answer ELSE NULL END AS correct_answer,
+           CASE WHEN resolved = 1 THEN correct_answer_hash ELSE NULL END AS correct_answer_hash
+    FROM problems WHERE resolved = 0 ORDER BY created_at DESC LIMIT 1
+  `).get()
 }
 
 export function getRecentProblems(limit = 20): any[] {
   const database = getDatabase()
-  return database.prepare('SELECT * FROM problems ORDER BY created_at DESC LIMIT ?').all(limit)
+  // C-01: Exclude correct_answer and correct_answer_hash for unresolved problems
+  return database.prepare(`
+    SELECT id, question_hash, question_text, difficulty, category, created_at, deadline,
+           submit_deadline, reveal_deadline, verify_deadline, oracle_fallback, resolved,
+           CASE WHEN resolved = 1 THEN correct_answer ELSE NULL END AS correct_answer,
+           CASE WHEN resolved = 1 THEN correct_answer_hash ELSE NULL END AS correct_answer_hash
+    FROM problems ORDER BY created_at DESC LIMIT ?
+  `).all(limit)
 }
 
 export function getSubmissionsForProblem(problemId: number): any[] {

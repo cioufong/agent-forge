@@ -22,6 +22,49 @@ const app = express()
 app.use(express.json())
 app.use(cors({ origin: allowedOrigins, credentials: true }))
 
+// ============ M-04: Param Validation Helper ============
+
+function parsePositiveInt(value: string | undefined): number | null {
+  if (value === undefined) return null
+  const num = parseInt(value, 10)
+  if (isNaN(num) || num < 0) return null
+  return num
+}
+
+// ============ M-05: In-memory Rate Limiter (IP-based, 100 req/min) ============
+
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_MAX = 100
+
+app.use((req, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown'
+  const now = Date.now()
+  let entry = rateLimitMap.get(ip)
+
+  if (!entry || now >= entry.resetAt) {
+    entry = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS }
+    rateLimitMap.set(ip, entry)
+  }
+
+  entry.count++
+
+  if (entry.count > RATE_LIMIT_MAX) {
+    res.status(429).json({ error: 'Too many requests. Please try again later.' })
+    return
+  }
+
+  next()
+})
+
+// Periodically clean up expired entries to prevent memory leak
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, entry] of rateLimitMap) {
+    if (now >= entry.resetAt) rateLimitMap.delete(ip)
+  }
+}, RATE_LIMIT_WINDOW_MS)
+
 // ============ Health ============
 
 app.get('/health', (_req, res) => {
@@ -43,7 +86,12 @@ app.get('/api/config', (_req, res) => {
 // Agent details
 app.get('/api/agents/:tokenId', async (req, res) => {
   try {
-    const tokenId = parseInt(req.params.tokenId, 10)
+    const tokenId = parsePositiveInt(req.params.tokenId)
+    if (tokenId === null) {
+      res.status(400).json({ error: 'Invalid tokenId parameter' })
+      return
+    }
+
     let agent = getAgent(tokenId)
 
     if (!agent) {
@@ -64,7 +112,9 @@ app.get('/api/agents/:tokenId', async (req, res) => {
 
     res.json(agent)
   } catch (err: any) {
-    res.status(500).json({ error: err.message })
+    // M-09: Don't leak internal error details to clients
+    console.error('[api] GET /api/agents/:tokenId error:', err)
+    res.status(500).json({ error: 'Internal server error' })
   }
 })
 
@@ -76,7 +126,7 @@ app.get('/api/problems/current', (_req, res) => {
     return
   }
 
-  const tokenId = _req.query.tokenId ? parseInt(_req.query.tokenId as string, 10) : undefined
+  const tokenId = _req.query.tokenId ? parsePositiveInt(_req.query.tokenId as string) : undefined
 
   // Determine current phase based on time
   const now = Math.floor(Date.now() / 1000)
@@ -116,14 +166,22 @@ app.get('/api/problems', (_req, res) => {
 
 // Problem detail by ID
 app.get('/api/problems/:id', (req, res) => {
-  const problemId = parseInt(req.params.id, 10)
+  const problemId = parsePositiveInt(req.params.id)
+  if (problemId === null) {
+    res.status(400).json({ error: 'Invalid problem ID parameter' })
+    return
+  }
   const submissions = getSubmissionsForProblem(problemId)
   res.json({ problemId, submissions })
 })
 
 // Submissions for a problem
 app.get('/api/problems/:id/submissions', (req, res) => {
-  const problemId = parseInt(req.params.id, 10)
+  const problemId = parsePositiveInt(req.params.id)
+  if (problemId === null) {
+    res.status(400).json({ error: 'Invalid problem ID parameter' })
+    return
+  }
   const submissions = getSubmissionsForProblem(problemId)
   res.json(submissions)
 })
@@ -136,15 +194,20 @@ app.get('/api/leaderboard', (_req, res) => {
 
 // Reward history for an agent
 app.get('/api/rewards/:tokenId', (req, res) => {
-  const tokenId = parseInt(req.params.tokenId, 10)
+  const tokenId = parsePositiveInt(req.params.tokenId)
+  if (tokenId === null) {
+    res.status(400).json({ error: 'Invalid tokenId parameter' })
+    return
+  }
   const history = getRewardHistory(tokenId)
   res.json(history)
 })
 
 // Event polling — replaces WebSocket
 app.get('/api/events', (req, res) => {
-  const since = parseInt(req.query.since as string, 10) || 0
-  const limit = Math.min(parseInt(req.query.limit as string, 10) || 100, 500)
+  const since = parsePositiveInt(req.query.since as string) ?? 0
+  const limitParam = parsePositiveInt(req.query.limit as string) ?? 100
+  const limit = Math.min(limitParam, 500)
   const events = getRecentEvents(since, limit)
   res.json(events)
 })

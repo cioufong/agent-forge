@@ -20,6 +20,12 @@ function getPublicClient(): PublicClient {
     publicClient = createPublicClient({
       chain: TARGET_CHAIN,
       transport: http(),
+      batch: {
+        multicall: {
+          batchSize: 1024,
+          wait: 50,
+        },
+      },
     })
   }
   return publicClient
@@ -55,6 +61,12 @@ async function connect(): Promise<void> {
     publicClient = createPublicClient({
       chain: TARGET_CHAIN,
       transport: custom(ethereum),
+      batch: {
+        multicall: {
+          batchSize: 1024,
+          wait: 50,
+        },
+      },
     })
 
     // Listen for account/chain changes

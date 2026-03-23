@@ -9,8 +9,8 @@ import "./AgentNFA.sol";
  * @title ProblemManager
  * @notice 4-phase problem lifecycle: Submit → Reveal → Verify → Resolve
  *
- *   Phase 1 - SUBMIT (5 min): Agents submit keccak256(answer) on-chain
- *   Phase 2 - REVEAL (2 min): Agents reveal plaintext, contract verifies hash
+ *   Phase 1 - SUBMIT (5 min): Agents submit keccak256(abi.encodePacked(tokenId, answer)) on-chain
+ *   Phase 2 - REVEAL (2 min): Agents reveal plaintext, contract verifies hash (salted with tokenId)
  *   Phase 3 - VERIFY (3 min): Elected verifiers vote on correct answer (commit-reveal)
  *   Phase 4 - RESOLVE: Consensus determines winners; oracle fallback if no quorum
  */
@@ -25,6 +25,9 @@ contract ProblemManager is Ownable, Pausable {
     uint64 public constant SUBMIT_DURATION = 5 minutes;
     uint64 public constant REVEAL_DURATION = 2 minutes;
     uint64 public constant VERIFY_DURATION = 3 minutes;
+
+    /// @notice Maximum number of winners per problem to prevent gas griefing [H-05 fix]
+    uint256 public constant MAX_WINNERS = 100;
 
     // ============ Structs ============
 
@@ -194,6 +197,8 @@ contract ProblemManager is Ownable, Pausable {
 
     /**
      * @notice Reveal the plaintext answer. Contract verifies hash matches.
+     * @dev The answerHash submitted in Phase 1 must be keccak256(abi.encodePacked(tokenId, answer))
+     *      to bind the commit to the specific NFA and prevent front-running. [C-02 fix]
      * @param problemId The problem
      * @param tokenId The NFA that submitted
      * @param answer The plaintext answer string
@@ -203,6 +208,9 @@ contract ProblemManager is Ownable, Pausable {
         uint256 tokenId,
         string calldata answer
     ) external {
+        // Only the token owner can reveal [C-02 fix: prevent front-running]
+        if (agentNFA.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+
         Problem storage p = problems[problemId];
         if (p.createdAt == 0) revert ProblemNotFound();
         if (p.resolved) revert ProblemAlreadyResolved();
@@ -216,8 +224,8 @@ contract ProblemManager is Ownable, Pausable {
         Submission storage sub = _submissions[problemId][idx];
         if (sub.revealed) revert AlreadyRevealed();
 
-        // Verify hash matches
-        bytes32 computedHash = keccak256(abi.encodePacked(answer));
+        // Verify hash matches — hash includes tokenId as salt [C-02 fix: unsalted commit]
+        bytes32 computedHash = keccak256(abi.encodePacked(tokenId, answer));
         if (computedHash != sub.answerHash) revert HashMismatch();
 
         sub.revealed = true;
@@ -290,16 +298,30 @@ contract ProblemManager is Ownable, Pausable {
         uint256[] storage tokenIds = _answerTokenIds[problemId][correctAnswerHash];
         uint256 len = tokenIds.length;
 
-        // Copy to memory for sorting
-        uint256[] memory sorted = new uint256[](len);
+        // Filter out burned tokens before sorting [C-03 fix]
+        uint256[] memory valid = new uint256[](len);
+        uint256 validCount = 0;
         for (uint256 i = 0; i < len; i++) {
-            sorted[i] = tokenIds[i];
+            try agentNFA.ownerOf(tokenIds[i]) returns (address) {
+                valid[validCount] = tokenIds[i];
+                validCount++;
+            } catch {
+                // Token was burned — skip this winner instead of reverting
+            }
+        }
+
+        // Copy valid entries to a right-sized array
+        uint256[] memory sorted = new uint256[](validCount);
+        for (uint256 i = 0; i < validCount; i++) {
+            sorted[i] = valid[i];
         }
 
         // Sort by speed (descending), then by submittedAt (ascending) as tiebreaker
         _sortBySpeed(sorted, problemId);
 
-        for (uint256 i = 0; i < len; i++) {
+        // Cap winners to MAX_WINNERS to prevent gas griefing [H-05 fix]
+        uint256 cappedLen = sorted.length > MAX_WINNERS ? MAX_WINNERS : sorted.length;
+        for (uint256 i = 0; i < cappedLen; i++) {
             winners[problemId].push(sorted[i]);
         }
 
