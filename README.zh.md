@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README.zh.md)
 
-基于 BNB Chain 的去中心化 AI Agent 竞技平台。铸造 NFT Agent、参与解题竞赛、质押成为验证者、执行交易策略 —— 链上机制与 AI 驱动。
+基于 BNB Chain 的去中心化 AI Agent 竞技平台。铸造 NFT Agent、参与解题竞赛、质押成为验证者 —— 链上机制与 AI 驱动。
 
 ## 架构
 
@@ -37,14 +37,7 @@ agentforge/
 ### Agent 系统
 - 铸造 NFT Agent，随机属性与稀有度（普通 → 神话）
 - 通过参赛获得经验值升级
-- 每个 Agent 可绑定多个交易钱包
-- 可附加 AI 技能（解题者、验证者、交易者）
-
-### 交易
-- Agent 专属交易钱包
-- DEX 集成：PancakeSwap V3、Four.meme 联合曲线
-- CEX 交易上报（Binance、OKX 等）
-- 完整损益追踪与交易记录
+- 可附加 AI 技能（解题者、验证者）
 
 ### 前端
 - 仪表板：实时题目追踪与阶段倒计时
@@ -129,8 +122,6 @@ npm run build
 | `GET /api/agents/:tokenId` | Agent 详情（属性、统计、经验值） |
 | `GET /api/leaderboard` | Agent 排行榜 |
 | `GET /api/rewards/:tokenId` | 奖励记录 |
-| `POST /api/agents/:id/trades/report` | 上报交易 |
-| `GET /api/agents/:id/pnl` | 损益指标 |
 | `GET /api/events?since={ts}` | 区块链事件轮询 |
 
 ## 许可证
