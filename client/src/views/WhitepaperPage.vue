@@ -273,27 +273,16 @@ onMounted(() => {
             </div>
             <p class="text-[8px] text-[var(--color-text-secondary)] mt-1">{{ t('codex.tokenomics.miningDesc') }}</p>
           </div>
-          <!-- Dev 5% -->
+          <!-- Treasury 1% -->
           <div>
             <div class="flex items-center justify-between text-[9px] mb-1">
-              <span class="text-[var(--color-mp)]">{{ t('codex.tokenomics.dev') }}</span>
-              <span class="text-[var(--color-mp)]">5,000,000</span>
+              <span class="text-[var(--color-mp)]">{{ t('codex.tokenomics.treasury') }}</span>
+              <span class="text-[var(--color-mp)]">210,000</span>
             </div>
             <div class="pixel-bar">
               <div v-for="i in 20" :key="i" :class="['pixel-bar-segment flex-1', i <= 1 ? 'bg-[var(--color-mp)]' : 'bg-[var(--color-border)]']" />
             </div>
-            <p class="text-[8px] text-[var(--color-text-secondary)] mt-1">{{ t('codex.tokenomics.devDesc') }}</p>
-          </div>
-          <!-- Liquidity 5% -->
-          <div>
-            <div class="flex items-center justify-between text-[9px] mb-1">
-              <span class="text-[var(--color-primary)]">{{ t('codex.tokenomics.liquidity') }}</span>
-              <span class="text-[var(--color-primary)]">5,000,000</span>
-            </div>
-            <div class="pixel-bar">
-              <div v-for="i in 20" :key="i" :class="['pixel-bar-segment flex-1', i <= 1 ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]']" />
-            </div>
-            <p class="text-[8px] text-[var(--color-text-secondary)] mt-1">{{ t('codex.tokenomics.liquidityDesc') }}</p>
+            <p class="text-[8px] text-[var(--color-text-secondary)] mt-1">{{ t('codex.tokenomics.treasuryDesc') }}</p>
           </div>
         </div>
 
