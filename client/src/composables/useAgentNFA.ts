@@ -110,20 +110,53 @@ export function useAgentNFA() {
       functionName: 'totalSupply',
     }))
 
+    if (totalSupply === 0) return []
+
+    // Batch ownerOf calls via multicall instead of sequential RPC
+    // Keep batch small to stay within public RPC calldata/gas limits (BSC: 10K req/5min)
+    const BATCH_SIZE = 50
     const ownedTokens: number[] = []
-    for (let i = 1; i <= totalSupply; i++) {
-      try {
-        const tokenOwner = await client.readContract({
+
+    for (let start = 1; start <= totalSupply; start += BATCH_SIZE) {
+      const end = Math.min(start + BATCH_SIZE - 1, totalSupply)
+      const calls = []
+      for (let i = start; i <= end; i++) {
+        calls.push({
           address,
           abi: AGENT_NFA_ABI,
           functionName: 'ownerOf',
           args: [BigInt(i)],
-        }) as Address
+        } as const)
+      }
 
-        if (tokenOwner.toLowerCase() === owner.toLowerCase()) {
-          ownedTokens.push(i)
+      try {
+        const results = await client.multicall({
+          contracts: calls,
+          batchSize: 2048, // limit calldata per multicall to 2KB
+        })
+
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j]
+          if (result.status === 'success' && (result.result as string).toLowerCase() === owner.toLowerCase()) {
+            ownedTokens.push(start + j)
+          }
         }
-      } catch { /* burned or non-existent */ }
+      } catch {
+        // Fallback: sequential calls for this batch on RPC error
+        for (let i = start; i <= end; i++) {
+          try {
+            const tokenOwner = await client.readContract({
+              address,
+              abi: AGENT_NFA_ABI,
+              functionName: 'ownerOf',
+              args: [BigInt(i)],
+            }) as Address
+            if (tokenOwner.toLowerCase() === owner.toLowerCase()) {
+              ownedTokens.push(i)
+            }
+          } catch { /* burned or non-existent */ }
+        }
+      }
     }
 
     return ownedTokens

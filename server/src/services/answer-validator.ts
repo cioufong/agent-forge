@@ -12,6 +12,7 @@ import { resolveProblem as resolveInDB, insertEvent } from './database.js'
 
 // Track correct answers per problem (from problem-generator)
 const correctAnswers: Map<number, { answer: string; answerHash: string }> = new Map()
+const MAX_CACHED_ANSWERS = 100
 
 /**
  * Register the correct answer for a problem (called by problem-generator)
@@ -19,6 +20,12 @@ const correctAnswers: Map<number, { answer: string; answerHash: string }> = new 
 export function registerCorrectAnswer(problemId: number, answer: string): void {
   const answerHash = keccak256(toHex(answer))
   correctAnswers.set(problemId, { answer, answerHash })
+
+  // Evict oldest entries if cache grows too large
+  if (correctAnswers.size > MAX_CACHED_ANSWERS) {
+    const oldest = correctAnswers.keys().next().value
+    if (oldest !== undefined) correctAnswers.delete(oldest)
+  }
 }
 
 /**
@@ -46,16 +53,16 @@ export async function oracleResolve(problemId: number): Promise<void> {
 
   console.log(`[oracle] Resolving problem #${problemId} via oracle fallback`)
 
-  // Resolve in database
-  resolveInDB(problemId, entry.answerHash, entry.answer, true)
-
-  // Resolve on-chain
+  // Resolve on-chain first, then mark DB (avoid state divergence if tx fails)
   try {
     await resolveByOracleOnChain(
       BigInt(problemId),
       entry.answerHash as `0x${string}`,
     )
     console.log(`[oracle] Problem #${problemId} resolved on-chain`)
+
+    // Only mark DB resolved after on-chain success
+    resolveInDB(problemId, entry.answerHash, entry.answer, true)
 
     // Read winners from chain (auto-determined by revealed answers)
     const winners = await getWinnersOnChain(BigInt(problemId))

@@ -8,10 +8,11 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 dotenv.config({ path: path.resolve(__dirname, '../.env') })
 
-import { initializeDatabase, getAgent, getLeaderboard, getCurrentProblem as getDBCurrentProblem, getRecentProblems, getSubmissionsForProblem, getRewardHistory, getRecentEvents } from './services/database.js'
+import { initializeDatabase, getAgent, getLeaderboard, getCurrentProblem as getDBCurrentProblem, getRecentProblems, getSubmissionsForProblem, getRewardHistory, getRecentEvents, getUnresolvedProblems } from './services/database.js'
 import { initContracts, getContracts, getAgentNFAData, isProblemManagerPaused } from './services/blockchain.js'
 import { startProblemGenerator, getCurrentProblem, pauseGenerator } from './services/problem-generator.js'
 import { startEventListener } from './services/event-listener.js'
+import { scheduleOracleResolution, registerCorrectAnswer } from './services/answer-validator.js'
 
 const PORT = Number(process.env.PORT ?? 3001)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173'
@@ -171,6 +172,22 @@ async function bootstrap() {
     initiallyPaused = await isProblemManagerPaused()
     if (initiallyPaused) console.log('[init] ProblemManager is paused, generator will wait for Unpaused event')
   } catch { /* assume not paused */ }
+
+  // Recover oracle schedules for unresolved problems (lost on restart)
+  try {
+    const unresolved = getUnresolvedProblems()
+    for (const p of unresolved) {
+      if (p.correct_answer) {
+        registerCorrectAnswer(p.id, p.correct_answer)
+      }
+      scheduleOracleResolution(p.id, p.verify_deadline)
+    }
+    if (unresolved.length > 0) {
+      console.log(`[init] Recovered oracle schedules for ${unresolved.length} unresolved problem(s)`)
+    }
+  } catch (err: any) {
+    console.warn(`[init] Oracle recovery failed: ${err.message}`)
+  }
 
   if (initiallyPaused) pauseGenerator()
   await startProblemGenerator()

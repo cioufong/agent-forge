@@ -214,12 +214,13 @@ export function insertProblem(
   submitDeadline: number,
   revealDeadline: number,
   verifyDeadline: number,
+  correctAnswer?: string,
 ): void {
   const database = getDatabase()
   database.prepare(`
-    INSERT OR REPLACE INTO problems (id, question_hash, question_text, difficulty, category, created_at, deadline, submit_deadline, reveal_deadline, verify_deadline)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, questionHash, questionText, difficulty, category, createdAt, submitDeadline, submitDeadline, revealDeadline, verifyDeadline)
+    INSERT OR REPLACE INTO problems (id, question_hash, question_text, difficulty, category, created_at, deadline, submit_deadline, reveal_deadline, verify_deadline, correct_answer)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, questionHash, questionText, difficulty, category, createdAt, submitDeadline, submitDeadline, revealDeadline, verifyDeadline, correctAnswer ?? null)
 }
 
 export function resolveProblem(
@@ -386,6 +387,13 @@ export function insertEvent(type: string, data: Record<string, unknown> = {}): v
   database.prepare(`
     INSERT INTO events (type, data, created_at) VALUES (?, ?, ?)
   `).run(type, JSON.stringify(data), Date.now())
+}
+
+export function getUnresolvedProblems(limit: number = 50): any[] {
+  const database = getDatabase()
+  return database.prepare(
+    'SELECT id, verify_deadline, correct_answer FROM problems WHERE resolved = 0 AND verify_deadline IS NOT NULL ORDER BY created_at DESC LIMIT ?'
+  ).all(limit)
 }
 
 export function getRecentEvents(since: number = 0, limit: number = 100): any[] {

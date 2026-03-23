@@ -182,7 +182,7 @@ export async function startProblemGenerator(): Promise<void> {
       const revealDeadline = now + SUBMIT_DURATION + REVEAL_DURATION
       const verifyDeadline = now + SUBMIT_DURATION + REVEAL_DURATION + VERIFY_DURATION
 
-      // Store in database with all 3 deadlines
+      // Store in database with all 3 deadlines + correct answer for restart recovery
       insertProblem(
         problem.id,
         problem.questionHash,
@@ -193,6 +193,7 @@ export async function startProblemGenerator(): Promise<void> {
         submitDeadline,
         revealDeadline,
         verifyDeadline,
+        problem.answer,
       )
 
       // Register correct answer for oracle fallback
