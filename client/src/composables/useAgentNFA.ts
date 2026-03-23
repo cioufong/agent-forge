@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { parseEther, type Address } from 'viem'
+import { parseEther, isAddressEqual, type Address } from 'viem'
 import { useWeb3 } from './useWeb3'
 import { AGENT_NFA_ABI } from '@/services/contracts/abis'
 import { getContractAddress } from '@/config/contracts'
@@ -39,16 +39,8 @@ export function useAgentNFA() {
         account: account.value!,
       })
 
-      const receipt = await client.waitForTransactionReceipt({ hash })
+      await client.waitForTransactionReceipt({ hash })
 
-      // Parse AgentMinted event to get tokenId
-      const mintEvent = receipt.logs.find(log => {
-        try {
-          return log.topics[0] === '0x' // Will be the event topic
-        } catch { return false }
-      })
-
-      // Get tokenId from the event or total supply
       const totalSupply = await client.readContract({
         address,
         abi: AGENT_NFA_ABI,
@@ -137,7 +129,7 @@ export function useAgentNFA() {
 
         for (let j = 0; j < results.length; j++) {
           const result = results[j]
-          if (result.status === 'success' && (result.result as string).toLowerCase() === owner.toLowerCase()) {
+          if (result.status === 'success' && isAddressEqual(result.result as Address, owner)) {
             ownedTokens.push(start + j)
           }
         }
@@ -151,7 +143,7 @@ export function useAgentNFA() {
               functionName: 'ownerOf',
               args: [BigInt(i)],
             }) as Address
-            if (tokenOwner.toLowerCase() === owner.toLowerCase()) {
+            if (isAddressEqual(tokenOwner, owner)) {
               ownedTokens.push(i)
             }
           } catch { /* burned or non-existent */ }

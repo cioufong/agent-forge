@@ -68,19 +68,23 @@ export async function oracleResolve(problemId: number): Promise<void> {
     const winners = await getWinnersOnChain(BigInt(problemId))
     console.log(`[oracle] Problem #${problemId}: ${winners.length} winner(s)`)
 
-    // Group winners by tier based on NFA level
+    // Group winners by tier based on NFA level (parallel lookups)
     if (winners.length > 0) {
       const tierGroups: Map<number, bigint[]> = new Map()
 
-      for (const tokenId of winners) {
-        let tier = 0 // default Bronze
-        try {
-          const agentData = await getAgentNFAData(tokenId)
-          tier = Number(agentData.tier)
-        } catch { /* fallback to Bronze */ }
+      const tiers = await Promise.all(
+        winners.map(async (tokenId) => {
+          try {
+            const agentData = await getAgentNFAData(tokenId)
+            return Number(agentData.tier)
+          } catch { return 0 /* fallback to Bronze */ }
+        })
+      )
 
+      for (let i = 0; i < winners.length; i++) {
+        const tier = tiers[i]
         if (!tierGroups.has(tier)) tierGroups.set(tier, [])
-        tierGroups.get(tier)!.push(tokenId)
+        tierGroups.get(tier)!.push(winners[i])
       }
 
       // Distribute rewards per tier

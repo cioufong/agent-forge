@@ -389,6 +389,12 @@ export function insertEvent(type: string, data: Record<string, unknown> = {}): v
   `).run(type, JSON.stringify(data), Date.now())
 }
 
+export function getMaxProblemId(): number {
+  const database = getDatabase()
+  const row = database.prepare('SELECT MAX(id) as maxId FROM problems').get() as { maxId: number | null }
+  return row?.maxId ?? 0
+}
+
 export function getUnresolvedProblems(limit: number = 50): any[] {
   const database = getDatabase()
   return database.prepare(

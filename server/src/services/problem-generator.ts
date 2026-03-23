@@ -6,7 +6,7 @@
 
 import { keccak256, toHex } from 'viem'
 import { postProblemOnChain } from './blockchain.js'
-import { insertProblem, insertEvent } from './database.js'
+import { insertProblem, insertEvent, getMaxProblemId } from './database.js'
 import { registerCorrectAnswer, scheduleOracleResolution, broadcastPhaseChange } from './answer-validator.js'
 import { generateAIProblem, CATEGORY_TO_SPECIALIZATION, type ExtendedCategory, type SpecializationGroup } from './ai-problem-generator.js'
 
@@ -156,7 +156,9 @@ export function getCurrentProblem(): Problem | null {
 // ============ Main Loop ============
 
 export async function startProblemGenerator(): Promise<void> {
-  console.log(`[problem] Generator starting (interval: ${PROBLEM_INTERVAL}ms)`)
+  // Resume counter from DB to avoid ID collisions after restart
+  problemCounter = getMaxProblemId() + 1
+  console.log(`[problem] Generator starting (interval: ${PROBLEM_INTERVAL}ms, next ID: ${problemCounter})`)
 
   if (paused) {
     console.log('[problem] Contract is paused, skipping initial generation')
